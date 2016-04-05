@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"net"
 	// "strings"
-	"time"
-	// "bytes"
+	"bytes"
 	"encoding/base64"
+	"encoding/binary"
+	"time"
 	"unsafe"
 
 	"gopp"
@@ -19,7 +20,6 @@ const (
 
 type Tunnelc struct {
 	tox    *tox.Tox
-	kcp    *KCP
 	srv    net.Listener
 	chpool *ChannelPool
 }
@@ -36,10 +36,9 @@ func NewTunnelc() *Tunnelc {
 	t.CallbackFriendRequest(this.onToxnetFriendRequest, nil)
 	t.CallbackFriendConnectionStatus(this.onToxnetFriendConnectionStatus, nil)
 	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
+	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
 
 	//
-	this.kcp = NewKCP(tunconv, this.onKcpOutput, this)
-	this.kcp.SetMtu(tunmtu)
 	return this
 }
 
@@ -77,9 +76,16 @@ func (this *Tunnelc) serveConn(conn net.Conn) {
 	this.chpool.putClient(ch)
 
 	pkt := ch.makeConnectACKPacket()
+	n, err := this.tox.FriendSendMessage(0, string(pkt.toJson()))
+	if err != nil {
+		// 连接失败
+		errl.Println(err)
+		this.chpool.rmClient(ch)
+		return
+	}
 
-	n := this.kcp.Send(pkt.toJson())
-	debug.Println(n, gopp.SubStr(string(pkt.toJson()), 32))
+	// n := this.kcp.Send(pkt.toJson())
+	debug.Println(n, gopp.SubStr(string(pkt.toJson()), 52))
 	// c.Close()
 }
 
@@ -91,50 +97,57 @@ func (this *Tunnelc) serveKcp() {
 	zbuf := make([]byte, 0)
 	for {
 		time.Sleep(1000 * 30 * time.Microsecond)
-		this.kcp.Update(uint32(iclock()))
 
-		n := this.kcp.Recv(zbuf)
-		switch n {
-		case -3:
-			rbuf := make([]byte, this.kcp.PeekSize())
-			n := this.kcp.Recv(rbuf)
-			go this.processKcpReceive(rbuf, n)
-		case -2: // just empty kcp recv queue
-			// errl.Println("kcp recv internal error:", n, this.kcp.PeekSize())
-		case -1: // EAGAIN
-		default:
-			errl.Println("unknown recv:", n)
+		for _, ch := range this.chpool.pool {
+			if ch.kcp == nil {
+				continue
+			}
+
+			ch.kcp.Update(uint32(iclock()))
+
+			n := ch.kcp.Recv(zbuf)
+			switch n {
+			case -3:
+				rbuf := make([]byte, ch.kcp.PeekSize())
+				n := ch.kcp.Recv(rbuf)
+				go this.processKcpReceive(rbuf, n, ch)
+			case -2: // just empty kcp recv queue
+				// errl.Println("kcp recv internal error:", n, this.kcp.PeekSize())
+			case -1: // EAGAIN
+			default:
+				errl.Println("unknown recv:", n)
+			}
 		}
 	}
 }
 
 func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
-	debug.Println(len(buf), size, string(gopp.SubBytes(buf, 32)))
+	debug.Println(len(buf), size, string(gopp.SubBytes(buf, 52)))
 
-	msg := base64.StdEncoding.EncodeToString(buf[0:size])
-	// msg = string(byte(254)) + msg
-	debug.Println(msg)
-	this.tox.FriendSendMessage(0, msg)
+	if size <= 0 {
+		info.Println("wtf")
+		return
+	}
 
-	/*
-		err := this.tox.FriendSendLossyPacket(0, msg)
-		if err != nil {
-			errl.Println(err)
-		}
-	*/
+	msg := string([]byte{254}) + string(buf[:size])
+	err := this.tox.FriendSendLossyPacket(0, msg)
+	if err != nil {
+		errl.Println(err)
+	}
+	info.Println("kcp->tox:", len(msg))
 }
 
-func (this *Tunnelc) processKcpReceive(buf []byte, n int) {
+func (this *Tunnelc) processKcpReceive(buf []byte, n int, ch *Channel) {
 	if len(buf) != n {
 		errl.Println("Invalide kcp recv data")
 	}
 
 	pkt := parsePacket(buf)
 	if pkt.isconnfin() {
-		ch := this.chpool.pool[pkt.chidcli]
-		ch.chidsrv = pkt.chidsrv
-		info.Println("channel connected:", ch.chidcli)
-		go this.processChannel(ch)
+		// ch := this.chpool.pool[pkt.chidcli]
+		// ch.chidsrv = pkt.chidsrv
+		// info.Println("channel connected:", ch.chidcli)
+		// go this.processChannel(ch)
 	} else if pkt.isdata() {
 		ch := this.chpool.pool[pkt.chidcli]
 		this.copyServer2Client(ch, pkt)
@@ -159,13 +172,13 @@ func (this *Tunnelc) copyClient2Server(ch *Channel) {
 
 		sbuf := base64.StdEncoding.EncodeToString(rbuf[:n])
 		pkt := ch.makeDataPacket(sbuf)
-		sn := this.kcp.Send(pkt.toJson())
-		info.Println("cli->kcp:", sn)
+		sn := ch.kcp.Send(pkt.toJson())
+		info.Println("cli->kcp:", sn, ch.conv)
 	}
 }
 
 func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
-	debug.Println("processing channel data:", ch.chidcli, gopp.StrSuf(pkt.data, 32))
+	debug.Println("processing channel data:", ch.chidcli, gopp.StrSuf(pkt.data, 52))
 	buf, err := base64.StdEncoding.DecodeString(pkt.data)
 	if err != nil {
 		errl.Println(err)
@@ -198,12 +211,44 @@ func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 }
 
 func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, message string, userData unsafe.Pointer) {
-	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 32))
-	buf, err := base64.StdEncoding.DecodeString(message)
-	if err != nil {
-		errl.Println(err)
-	}
+	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
 
-	n := this.kcp.Input(buf)
-	debug.Println("tox->kcp:", n, len(buf))
+	pkt := parsePacket(bytes.NewBufferString(message).Bytes())
+	if pkt == nil {
+		info.Println("maybe not command, just normal message")
+	} else {
+		ch := this.chpool.pool[pkt.chidcli]
+		ch.conv = pkt.conv
+		ch.chidsrv = pkt.chidsrv
+		ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+		ch.kcp.SetMtu(tunmtu)
+		this.chpool.putClient(ch)
+
+		info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
+		// can read now，不能阻塞，开新的goroutine
+		go this.processChannel(ch)
+	}
+}
+
+func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, message string, userData unsafe.Pointer) {
+	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
+
+	buf := bytes.NewBufferString(message).Bytes()
+	if buf[0] == 254 { // lossypacket
+		buf = buf[1:]
+		var conv uint32
+		// kcp包前4字段为conv，little hacky
+		if len(buf) < 4 {
+			errl.Println("wtf")
+		}
+		conv = binary.LittleEndian.Uint32(buf)
+		ch := this.chpool.pool2[conv]
+		if ch == nil {
+			info.Println("maybe has some problem")
+		}
+		n := ch.kcp.Input(buf)
+		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+	} else {
+		info.Println("unknown message:", buf[0])
+	}
 }

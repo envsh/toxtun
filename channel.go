@@ -14,6 +14,7 @@ const (
 	CMDKEYDATA         = "data"
 	CMDKEYREMIP        = "remip"
 	CMDKEYREMPORT      = "remport"
+	CMDKEYCONV         = "conv"
 
 	CMDCONNACK   = "connect_ack"
 	CMDCONNFIN   = "connect_fin"
@@ -36,12 +37,15 @@ func nextChanid() int {
 }
 
 type Channel struct {
-	chidcli int
-	chidsrv int
 	state   int
 	conn    net.Conn
+	chidcli int
+	chidsrv int
 	ip      string
 	port    string
+	conv    uint32
+	toxid   string // 仅用于服务器端
+	kcp     *KCP
 }
 
 func NewChannelClient(conn net.Conn) *Channel {
@@ -60,34 +64,54 @@ func NewChannelWithId(chanid int) *Channel {
 }
 
 func (this *Channel) makeConnectACKPacket() *Packet {
-	return NewPacket(this, CMDCONNACK, "")
+	pkt := NewPacket(this, CMDCONNACK, "")
+	pkt.conv = this.conv
+	return pkt
 }
 
 func (this *Channel) makeConnectFINPacket() *Packet {
-	return NewPacket(this, CMDCONNFIN, "")
+	pkt := NewPacket(this, CMDCONNFIN, "")
+	pkt.conv = this.conv
+	return pkt
 }
 
 func (this *Channel) makeDataPacket(data string) *Packet {
-	return NewPacket(this, CMDSENDDATA, data)
+	pkt := NewPacket(this, CMDSENDDATA, data)
+	pkt.conv = this.conv
+	return pkt
 }
 
 ///////////
 type ChannelPool struct {
-	pool map[int]*Channel
+	pool  map[int]*Channel
+	pool2 map[uint32]*Channel
 }
 
 func NewChannelPool() *ChannelPool {
 	p := new(ChannelPool)
 	p.pool = make(map[int]*Channel, 0)
+	p.pool2 = make(map[uint32]*Channel, 0)
 
 	return p
 }
 func (this *ChannelPool) putClient(ch *Channel) {
 	this.pool[ch.chidcli] = ch
+	this.pool2[ch.conv] = ch
 }
 
 func (this *ChannelPool) putServer(ch *Channel) {
 	this.pool[ch.chidsrv] = ch
+	this.pool2[ch.conv] = ch
+}
+
+func (this *ChannelPool) rmClient(ch *Channel) {
+	delete(this.pool, ch.chidcli)
+	delete(this.pool2, ch.conv)
+}
+
+func (this *ChannelPool) rmServer(ch *Channel) {
+	delete(this.pool, ch.chidsrv)
+	delete(this.pool2, ch.conv)
 }
 
 ////////////
@@ -99,6 +123,7 @@ type Packet struct {
 	data       string
 	remoteip   string
 	remoteport string
+	conv       uint32
 }
 
 func NewPacket(ch *Channel, command string, data string) *Packet {
@@ -126,6 +151,7 @@ func (this *Packet) toJson() []byte {
 	jso.Set(CMDKEYDATA, this.data)
 	jso.Set(CMDKEYREMIP, this.remoteip)
 	jso.Set(CMDKEYREMPORT, this.remoteport)
+	jso.Set(CMDKEYCONV, this.conv)
 
 	jsb, err := jso.Encode()
 	if err != nil {
@@ -147,6 +173,7 @@ func parsePacket(buf []byte) *Packet {
 	pkt.data = jso.Get(CMDKEYDATA).MustString()
 	pkt.remoteip = jso.Get(CMDKEYREMIP).MustString()
 	pkt.remoteport = jso.Get(CMDKEYREMPORT).MustString()
+	pkt.conv = uint32(jso.Get(CMDKEYCONV).MustUint64())
 
 	return pkt
 }
