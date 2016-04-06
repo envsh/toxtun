@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"time"
-	"unsafe"
 
 	"gopp"
 	"tox"
@@ -192,7 +191,7 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 }
 
 //////////////
-func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status uint32, extra unsafe.Pointer) {
+func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status uint32, extra interface{}) {
 	_, err := t.FriendByPublicKey(toxtunid)
 	if err != nil {
 		t.FriendAdd(toxtunid, "tuncli")
@@ -201,16 +200,16 @@ func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status uint32, ext
 	info.Println(status)
 }
 
-func (this *Tunnelc) onToxnetFriendRequest(t *tox.Tox, friendId string, message string, userData unsafe.Pointer) {
+func (this *Tunnelc) onToxnetFriendRequest(t *tox.Tox, friendId string, message string, userData interface{}) {
 	debug.Println(friendId, message)
 }
 
-func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status uint32, userData unsafe.Pointer) {
+func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status uint32, userData interface{}) {
 	fid, _ := this.tox.FriendGetPublicKey(friendNumber)
 	info.Println(friendNumber, status, fid)
 }
 
-func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, message string, userData unsafe.Pointer) {
+func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
 
 	pkt := parsePacket(bytes.NewBufferString(message).Bytes())
@@ -230,7 +229,7 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 	}
 }
 
-func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, message string, userData unsafe.Pointer) {
+func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
 
 	buf := bytes.NewBufferString(message).Bytes()
