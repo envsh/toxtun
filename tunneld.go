@@ -18,12 +18,12 @@ type Tunneld struct {
 	tox    *tox.Tox
 	chpool *ChannelPool
 
-	toxPollChan         chan ToxPollEvent
-	toxReadyReadChan    chan ToxReadyReadEvent
-	toxMessageChan      chan ToxMessageEvent
-	kcpPollChan         chan KcpPollEvent
-	kcpReadyReadChan    chan KcpReadyReadEvent
-	kcpOutputChan       chan KcpOutputEvent
+	toxPollChan chan ToxPollEvent
+	// toxReadyReadChan    chan ToxReadyReadEvent
+	// toxMessageChan      chan ToxMessageEvent
+	kcpPollChan chan KcpPollEvent
+	// kcpReadyReadChan    chan KcpReadyReadEvent
+	// kcpOutputChan       chan KcpOutputEvent
 	serverReadyReadChan chan ServerReadyReadEvent
 }
 
@@ -48,11 +48,11 @@ func NewTunneld() *Tunneld {
 func (this *Tunneld) serve() {
 
 	this.toxPollChan = make(chan ToxPollEvent, 0)
-	this.toxReadyReadChan = make(chan ToxReadyReadEvent, 0)
-	this.toxMessageChan = make(chan ToxMessageEvent, 0)
+	// this.toxReadyReadChan = make(chan ToxReadyReadEvent, 0)
+	// this.toxMessageChan = make(chan ToxMessageEvent, 1)
 	this.kcpPollChan = make(chan KcpPollEvent, 0)
-	this.kcpReadyReadChan = make(chan KcpReadyReadEvent, 0)
-	this.kcpOutputChan = make(chan KcpOutputEvent, 0)
+	// this.kcpReadyReadChan = make(chan KcpReadyReadEvent, 0)
+	// this.kcpOutputChan = make(chan KcpOutputEvent, 0)
 	this.serverReadyReadChan = make(chan ServerReadyReadEvent, 0)
 
 	// install pollers
@@ -74,27 +74,25 @@ func (this *Tunneld) serve() {
 		select {
 		case <-this.toxPollChan:
 			iterate(this.tox)
-		case evt := <-this.toxReadyReadChan:
-			this.processFriendLossyPacket(this.tox, evt.friendNumber, evt.message, nil)
-		case evt := <-this.toxMessageChan:
-			this.processFriendMessage(this.tox, evt.friendNumber, evt.message, nil)
+		// case evt := <-this.toxReadyReadChan:
+		// 	this.processFriendLossyPacket(this.tox, evt.friendNumber, evt.message, nil)
+		// case evt := <-this.toxMessageChan:
+		// 	debug.Println(evt)
+		// 	this.processFriendMessage(this.tox, evt.friendNumber, evt.message, nil)
 		case <-this.kcpPollChan:
-			this.serveKcp(this.kcpReadyReadChan)
-		case evt := <-this.kcpReadyReadChan:
-			this.processKcpReadyRead(evt.ch)
-		case evt := <-this.kcpOutputChan:
-			this.processKcpOutput(evt.buf, evt.size, evt.extra)
+			this.serveKcp()
+		// case evt := <-this.kcpReadyReadChan:
+		// 	this.processKcpReadyRead(evt.ch)
+		// case evt := <-this.kcpOutputChan:
+		// 	this.processKcpOutput(evt.buf, evt.size, evt.extra)
 		case evt := <-this.serverReadyReadChan:
 			this.processServerReadyRead(evt.ch, evt.buf, evt.size)
 		}
 	}
-
-	// go this.serveKcp()
-	// iterate(this.tox)
 }
 
 ///////////
-func (this *Tunneld) serveKcp(kcpReadyReadChan chan KcpReadyReadEvent) {
+func (this *Tunneld) serveKcp() {
 	zbuf := make([]byte, 0)
 	if true {
 		for _, ch := range this.chpool.pool {
@@ -107,7 +105,7 @@ func (this *Tunneld) serveKcp(kcpReadyReadChan chan KcpReadyReadEvent) {
 			n := ch.kcp.Recv(zbuf)
 			switch n {
 			case -3:
-				kcpReadyReadChan <- KcpReadyReadEvent{ch}
+				this.processKcpReadyRead(ch)
 			case -2: // just empty kcp recv queue
 				// errl.Println("kcp recv internal error:", n, this.kcp.PeekSize())
 			case -1: // EAGAIN
@@ -119,12 +117,7 @@ func (this *Tunneld) serveKcp(kcpReadyReadChan chan KcpReadyReadEvent) {
 }
 
 func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
-	debug.Println(len(buf), size, string(gopp.SubBytes(buf, 52)))
-	this.kcpOutputChan <- KcpOutputEvent{buf, size, extra}
-}
-func (this *Tunneld) processKcpOutput(buf []byte, size int, extra interface{}) {
-	debug.Println(len(buf), size, string(gopp.SubBytes(buf, 52)))
-
+	debug.Println(len(buf), "//", size, "//", string(gopp.SubBytes(buf, 52)))
 	if size <= 0 {
 		info.Println("wtf")
 		return
@@ -191,7 +184,7 @@ func (this *Tunneld) processServerReadyRead(ch *Channel, buf []byte, size int) {
 	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
 	pkt := ch.makeDataPacket(sbuf)
 	sn := ch.kcp.Send(pkt.toJson())
-	info.Println("srv->kcp:", sn)
+	info.Println("srv->kcp:", sn, size)
 }
 
 ////////////////
@@ -221,11 +214,6 @@ func (this *Tunneld) makeKcpConv(friendId string, pkt *Packet) uint32 {
 }
 func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
-	this.toxMessageChan <- ToxMessageEvent{friendNumber, message}
-}
-func (this *Tunneld) processFriendMessage(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
-	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
-
 	friendId, err := this.tox.FriendGetPublicKey(friendNumber)
 	if err != nil {
 		errl.Println(err)
@@ -242,6 +230,8 @@ func (this *Tunneld) processFriendMessage(t *tox.Tox, friendNumber uint32, messa
 		ch.toxid = friendId
 		ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 		ch.kcp.SetMtu(tunmtu)
+		// ch.kcp.WndSize(128, 128)
+		// ch.kcp.NoDelay(1, 10, 2, 1)
 		this.chpool.putServer(ch)
 
 		info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
@@ -259,11 +249,6 @@ func (this *Tunneld) processFriendMessage(t *tox.Tox, friendNumber uint32, messa
 
 func (this *Tunneld) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
-	this.toxReadyReadChan <- ToxReadyReadEvent{friendNumber, message}
-}
-func (this *Tunneld) processFriendLossyPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
-	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
-
 	buf := bytes.NewBufferString(message).Bytes()
 	if buf[0] == 254 {
 		buf = buf[1:]

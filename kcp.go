@@ -537,6 +537,9 @@ func (kcp *KCP) flush() {
 	for i := 0; i < count; i++ {
 		size := len(buffer) - len(ptr)
 		if size+IKCP_OVERHEAD > int(kcp.mtu) {
+			if size == 0 {
+				debug.Println("wtf")
+			}
 			kcp.output(buffer, size, kcp.extra)
 			ptr = buffer
 		}
@@ -573,6 +576,9 @@ func (kcp *KCP) flush() {
 		seg.cmd = IKCP_CMD_WASK
 		size := len(buffer) - len(ptr)
 		if size+IKCP_OVERHEAD > int(kcp.mtu) {
+			if size == 0 {
+				debug.Println("wtf")
+			}
 			kcp.output(buffer, size, kcp.extra)
 			ptr = buffer
 		}
@@ -584,6 +590,9 @@ func (kcp *KCP) flush() {
 		seg.cmd = IKCP_CMD_WINS
 		size := len(buffer) - len(ptr)
 		if size+IKCP_OVERHEAD > int(kcp.mtu) {
+			if size == 0 {
+				debug.Println("wtf")
+			}
 			kcp.output(buffer, size, kcp.extra)
 			ptr = buffer
 		}
@@ -667,6 +676,9 @@ func (kcp *KCP) flush() {
 			need := IKCP_OVERHEAD + len(segment.data)
 
 			if size+need >= int(kcp.mtu) {
+				if size == 0 {
+					debug.Println("wtf")
+				}
 				kcp.output(buffer, size, kcp.extra)
 				ptr = buffer
 			}

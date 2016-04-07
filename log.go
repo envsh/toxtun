@@ -45,7 +45,7 @@ var (
 
 func init() {
 	flag.BoolVar((*bool)(&info), "info", true, "info log")
-	flag.BoolVar((*bool)(&debug), "debug", true, "debug log, with this option, log goes to stdout with color")
+	flag.BoolVar((*bool)(&debug), "debug", false, "debug log, with this option, log goes to stdout with color")
 	flag.BoolVar((*bool)(&errl), "err", true, "error log")
 	/*
 		flag.BoolVar((*bool)(&dbgRq), "request", true, "request log")

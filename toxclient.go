@@ -96,11 +96,11 @@ func iterate(t *tox.Tox) {
 	shutdown := false
 	loopc := 0
 	itval := 0
-	for !shutdown {
+	if !shutdown {
 		iv := t.IterationInterval()
 		if iv != itval {
 			if itval-iv > 20 || iv-itval > 20 {
-				debug.Println("tox itval changed:", itval, iv)
+				// debug.Println("tox itval changed:", itval, iv)
 			}
 			itval = iv
 		}
@@ -118,5 +118,5 @@ func iterate(t *tox.Tox) {
 		time.Sleep(1000 * 50 * time.Microsecond)
 	}
 
-	t.Kill()
+	// t.Kill()
 }
