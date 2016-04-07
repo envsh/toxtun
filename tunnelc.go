@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"sync"
 	"time"
 
 	"gopp"
@@ -18,9 +19,10 @@ const (
 )
 
 type Tunnelc struct {
-	tox    *tox.Tox
-	srv    net.Listener
-	chpool *ChannelPool
+	tox      *tox.Tox
+	srv      net.Listener
+	chpool   *ChannelPool
+	kcpMutex sync.Mutex
 
 	toxPollChan chan ToxPollEvent
 	// toxReadyReadChan    chan ToxReadyReadEvent
@@ -45,6 +47,7 @@ func NewTunnelc() *Tunnelc {
 	t.CallbackFriendConnectionStatus(this.onToxnetFriendConnectionStatus, nil)
 	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
 	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
+	t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
 
 	//
 	return this
@@ -59,26 +62,29 @@ func (this *Tunnelc) serve() {
 	this.srv = srv
 	info.Println("tunaddr:", srv.Addr().String())
 
-	this.toxPollChan = make(chan ToxPollEvent, 0)
+	mpcsz := 256
+	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
 	// this.toxReadyReadChan = make(chan ToxReadyReadEvent, 0)
 	// this.toxMessageChan = make(chan ToxMessageEvent, 0)
-	this.kcpPollChan = make(chan KcpPollEvent, 0)
+	this.kcpPollChan = make(chan KcpPollEvent, mpcsz)
 	// this.kcpReadyReadChan = make(chan KcpReadyReadEvent, 0)
 	// this.kcpOutputChan = make(chan KcpOutputEvent, 0)
-	this.newConnChan = make(chan NewConnEvent, 0)
-	this.clientReadyReadChan = make(chan ClientReadyReadEvent, 0)
+	this.newConnChan = make(chan NewConnEvent, mpcsz)
+	this.clientReadyReadChan = make(chan ClientReadyReadEvent, mpcsz)
 
 	// install pollers
 	go func() {
 		for {
 			time.Sleep(1000 * 50 * time.Microsecond)
 			this.toxPollChan <- ToxPollEvent{}
+			// iterate(this.tox)
 		}
 	}()
 	go func() {
 		for {
 			time.Sleep(1000 * 30 * time.Microsecond)
 			this.kcpPollChan <- KcpPollEvent{}
+			// this.serveKcp()
 		}
 	}()
 	go this.serveTcp()
@@ -86,14 +92,10 @@ func (this *Tunnelc) serve() {
 	// like event handler
 	for {
 		select {
-		case <-this.toxPollChan:
-			iterate(this.tox)
 		// case evt := <-this.toxReadyReadChan:
 		// 	this.processFriendLossyPacket(this.tox, evt.friendNumber, evt.message, nil)
 		// case evt := <-this.toxMessageChan:
 		// 	this.processFriendMessage(this.tox, evt.friendNumber, evt.message, nil)
-		case <-this.kcpPollChan:
-			this.serveKcp()
 		// case evt := <-this.kcpReadyReadChan:
 		// 	this.processKcpReadyRead(evt.ch)
 		// case evt := <-this.kcpOutputChan:
@@ -102,8 +104,19 @@ func (this *Tunnelc) serve() {
 			this.initConnChanel(evt.conn)
 		case evt := <-this.clientReadyReadChan:
 			this.processClientReadyRead(evt.ch, evt.buf, evt.size)
+		case <-this.toxPollChan:
+			iterate(this.tox)
+		case <-this.kcpPollChan:
+			// this.kcpMutex.Lock()
+			this.serveKcp()
+			// this.kcpMutex.Unlock()
 		}
 	}
+}
+
+// 手写loop吧，试试
+func (this *Tunnelc) pollMain() {
+
 }
 
 func (this *Tunnelc) serveTcp() {
@@ -187,12 +200,15 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 	debug.Println(len(buf), size, string(gopp.SubBytes(buf, 52)))
 
 	if size <= 0 {
-		info.Println("wtf")
+		// 如果总是出现，并且不影响程序运行，那么也就不是bug了
+		// info.Println("wtf")
 		return
 	}
 
 	msg := string([]byte{254}) + string(buf[:size])
 	err := this.tox.FriendSendLossyPacket(0, msg)
+	// msg := string([]byte{191}) + string(buf[:size])
+	// err := this.tox.FriendSendLosslessPacket(0, msg)
 	if err != nil {
 		errl.Println(err)
 	}
@@ -209,13 +225,16 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 			break
 		}
 
+		// this.processClientReadyRead(ch, rbuf, n)
 		this.clientReadyReadChan <- ClientReadyReadEvent{ch, rbuf, n}
 	}
 }
 func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
 	pkt := ch.makeDataPacket(sbuf)
+	// this.kcpMutex.Lock()
 	sn := ch.kcp.Send(pkt.toJson())
+	// this.kcpMutex.Unlock()
 	info.Println("cli->kcp:", sn, ch.conv)
 }
 
@@ -277,6 +296,28 @@ func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
 	buf := bytes.NewBufferString(message).Bytes()
 	if buf[0] == 254 { // lossypacket
+		buf = buf[1:]
+		var conv uint32
+		// kcp包前4字段为conv，little hacky
+		if len(buf) < 4 {
+			errl.Println("wtf")
+		}
+		conv = binary.LittleEndian.Uint32(buf)
+		ch := this.chpool.pool2[conv]
+		if ch == nil {
+			info.Println("maybe has some problem")
+		}
+		n := ch.kcp.Input(buf)
+		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+	} else {
+		info.Println("unknown message:", buf[0])
+	}
+}
+
+func (this *Tunnelc) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
+	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
+	buf := bytes.NewBufferString(message).Bytes()
+	if buf[0] == 191 { // lossypacket
 		buf = buf[1:]
 		var conv uint32
 		// kcp包前4字段为conv，little hacky
