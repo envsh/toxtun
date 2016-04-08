@@ -65,7 +65,7 @@ func (this *Tunneld) serve() {
 	// install pollers
 	go func() {
 		for {
-			time.Sleep(1000 * 30 * time.Microsecond)
+			time.Sleep(30 * time.Millisecond)
 			this.toxPollChan <- ToxPollEvent{}
 			//iterate(this.tox)
 		}
@@ -73,9 +73,9 @@ func (this *Tunneld) serve() {
 	go func() {
 		for {
 			if this.kcpNextUpdateWait > 0 {
-				time.Sleep(1000 * time.Duration(this.kcpNextUpdateWait) * time.Microsecond)
+				time.Sleep(time.Duration(this.kcpNextUpdateWait) * time.Millisecond)
 			} else {
-				time.Sleep(1000 * 30 * time.Microsecond)
+				time.Sleep(30 * time.Millisecond)
 			}
 			this.kcpPollChan <- KcpPollEvent{}
 			//this.serveKcp()
@@ -159,12 +159,12 @@ func (this *Tunneld) serveKcp() {
 }
 
 func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
-	debug.Println(len(buf), "//", size, "//", string(gopp.SubBytes(buf, 52)))
 	if size <= 0 {
 		// 如果总是出现，并且不影响程序运行，那么也就不是bug了
 		// info.Println("wtf")
 		return
 	}
+	debug.Println(len(buf), "//", size, "//", string(gopp.SubBytes(buf, 52)))
 
 	msg := string([]byte{254}) + string(buf[:size])
 	err := this.tox.FriendSendLossyPacket(0, msg)
@@ -223,7 +223,11 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 		}
 
 		// this.processServerReadyRead(ch, rbuf, n)
+		btime := time.Now()
+		debug.Println(btime.String())
 		this.serverReadyReadChan <- ServerReadyReadEvent{ch, rbuf, n}
+		etime := time.Now()
+		debug.Println(etime.String(), etime.Sub(btime).String())
 	}
 }
 func (this *Tunneld) processServerReadyRead(ch *Channel, buf []byte, size int) {

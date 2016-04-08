@@ -75,14 +75,14 @@ func (this *Tunnelc) serve() {
 	// install pollers
 	go func() {
 		for {
-			time.Sleep(1000 * 50 * time.Microsecond)
+			time.Sleep(50 * time.Millisecond)
 			this.toxPollChan <- ToxPollEvent{}
 			// iterate(this.tox)
 		}
 	}()
 	go func() {
 		for {
-			time.Sleep(1000 * 30 * time.Microsecond)
+			time.Sleep(30 * time.Millisecond)
 			this.kcpPollChan <- KcpPollEvent{}
 			// this.serveKcp()
 		}
@@ -104,6 +104,8 @@ func (this *Tunnelc) serve() {
 			this.initConnChanel(evt.conn)
 		case evt := <-this.clientReadyReadChan:
 			this.processClientReadyRead(evt.ch, evt.buf, evt.size)
+			this.serveKcp()
+			iterate(this.tox)
 		case <-this.toxPollChan:
 			iterate(this.tox)
 		case <-this.kcpPollChan:
@@ -197,12 +199,13 @@ func (this *Tunnelc) processKcpReadyRead(ch *Channel) {
 }
 
 func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
-	debug.Println(len(buf), size, string(gopp.SubBytes(buf, 52)))
-
 	if size <= 0 {
 		// 如果总是出现，并且不影响程序运行，那么也就不是bug了
 		// info.Println("wtf")
 		return
+	}
+	debug.Println(len(buf), size, string(gopp.SubBytes(buf, 52)))
+	if _, ok := extra.(*Channel); !ok {
 	}
 
 	msg := string([]byte{254}) + string(buf[:size])

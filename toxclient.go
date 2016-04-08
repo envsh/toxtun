@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"time"
+	// "time"
 	"tox"
 )
 
 var server = []interface{}{
-	// "205.185.116.116", uint16(33445), "A179B09749AC826FF01F37A9613F6B57118AE014D4196A0E1105A98F93A54702",
-	"127.0.0.1", uint16(33445), "398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52",
+	"205.185.116.116", uint16(33445), "A179B09749AC826FF01F37A9613F6B57118AE014D4196A0E1105A98F93A54702",
+	// "127.0.0.1", uint16(33445), "398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52",
 }
 
 var fname string
@@ -44,9 +44,9 @@ func makeTox(name string) *tox.Tox {
 		panic(nil)
 	}
 
-	// r, err := t.Bootstrap(server[0].(string), server[1].(uint16), server[2].(string))
-	// r2, err := t.AddTcpRelay(server[0].(string), server[1].(uint16), server[2].(string))
-	// debug.Println("bootstrap:", r, err)
+	r, err := t.Bootstrap(server[0].(string), server[1].(uint16), server[2].(string))
+	r2, err := t.AddTcpRelay(server[0].(string), server[1].(uint16), server[2].(string))
+	debug.Println("bootstrap:", r, err, r2)
 
 	pubkey := t.SelfGetPublicKey()
 	seckey := t.SelfGetSecretKey()
@@ -115,7 +115,7 @@ func iterate(t *tox.Tox) {
 			}
 		}
 		loopc += 1
-		time.Sleep(1000 * 50 * time.Microsecond)
+		// time.Sleep(50 * time.Millisecond)
 	}
 
 	// t.Kill()
