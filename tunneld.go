@@ -225,7 +225,8 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 		// this.processServerReadyRead(ch, rbuf, n)
 		btime := time.Now()
 		debug.Println(btime.String())
-		this.serverReadyReadChan <- ServerReadyReadEvent{ch, rbuf, n}
+		sendbuf := gopp.BytesDup(rbuf[:n])
+		this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n}
 		etime := time.Now()
 		debug.Println(etime.String(), etime.Sub(btime).String())
 	}

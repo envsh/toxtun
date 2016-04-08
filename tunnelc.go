@@ -195,6 +195,7 @@ func (this *Tunnelc) processKcpReadyRead(ch *Channel) {
 		ch := this.chpool.pool[pkt.chidcli]
 		this.copyServer2Client(ch, pkt)
 	} else {
+		panic(123)
 	}
 }
 
@@ -228,8 +229,9 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 			break
 		}
 
+		sendbuf := gopp.BytesDup(rbuf[:n])
 		// this.processClientReadyRead(ch, rbuf, n)
-		this.clientReadyReadChan <- ClientReadyReadEvent{ch, rbuf, n}
+		this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
 	}
 }
 func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
