@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
-	"sync"
 	"time"
 
 	"gopp"
@@ -19,10 +18,9 @@ const (
 )
 
 type Tunnelc struct {
-	tox      *tox.Tox
-	srv      net.Listener
-	chpool   *ChannelPool
-	kcpMutex sync.Mutex
+	tox    *tox.Tox
+	srv    net.Listener
+	chpool *ChannelPool
 
 	toxPollChan chan ToxPollEvent
 	// toxReadyReadChan    chan ToxReadyReadEvent
@@ -32,6 +30,7 @@ type Tunnelc struct {
 	// kcpOutputChan       chan KcpOutputEvent
 	newConnChan         chan NewConnEvent
 	clientReadyReadChan chan ClientReadyReadEvent
+	clientCloseChan     chan ClientCloseEvent
 }
 
 func NewTunnelc() *Tunnelc {
@@ -71,6 +70,7 @@ func (this *Tunnelc) serve() {
 	// this.kcpOutputChan = make(chan KcpOutputEvent, 0)
 	this.newConnChan = make(chan NewConnEvent, mpcsz)
 	this.clientReadyReadChan = make(chan ClientReadyReadEvent, mpcsz)
+	this.clientCloseChan = make(chan ClientCloseEvent, mpcsz)
 
 	// install pollers
 	go func() {
@@ -106,12 +106,12 @@ func (this *Tunnelc) serve() {
 			this.processClientReadyRead(evt.ch, evt.buf, evt.size)
 			this.serveKcp()
 			iterate(this.tox)
+		case evt := <-this.clientCloseChan:
+			this.promiseChannelClose(evt.ch)
 		case <-this.toxPollChan:
 			iterate(this.tox)
 		case <-this.kcpPollChan:
-			// this.kcpMutex.Lock()
 			this.serveKcp()
-			// this.kcpMutex.Unlock()
 		}
 	}
 }
@@ -233,13 +233,45 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 		// this.processClientReadyRead(ch, rbuf, n)
 		this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
 	}
+
+	// 连接结束
+	info.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
+	ch.client_socket_close = true
+	this.clientCloseChan <- ClientCloseEvent{ch}
 }
+
+func (this *Tunnelc) promiseChannelClose(ch *Channel) {
+	debug.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv)
+	if ch.client_socket_close == true && ch.server_socket_close == false {
+		pkt := ch.makeCloseACKPacket()
+		n, err := this.tox.FriendSendMessage(0, string(pkt.toJson()))
+		if err != nil {
+			// 连接失败
+			errl.Println(err)
+			return
+		}
+		debug.Println(n, gopp.SubStr(string(pkt.toJson()), 52))
+		delete(this.chpool.pool, ch.chidcli)
+		delete(this.chpool.pool2, ch.conv)
+	} else if ch.client_socket_close == true && ch.server_socket_close == true {
+		//
+		info.Println("both socket closed:", ch.chidcli, ch.chidsrv, ch.conv)
+		delete(this.chpool.pool, ch.chidcli)
+		delete(this.chpool.pool2, ch.conv)
+	} else if ch.client_socket_close == false && ch.server_socket_close == true {
+		info.Println("server socket closed, force close client", ch.chidcli, ch.chidsrv, ch.conv)
+		ch.conn.Close()
+	} else {
+		info.Println("what state:", ch.chidcli, ch.chidsrv, ch.conv,
+			ch.server_socket_close, ch.server_kcp_close, ch.client_socket_close)
+		panic("Ooops")
+	}
+}
+
 func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
 	pkt := ch.makeDataPacket(sbuf)
-	// this.kcpMutex.Lock()
 	sn := ch.kcp.Send(pkt.toJson())
-	// this.kcpMutex.Unlock()
 	info.Println("cli->kcp:", sn, ch.conv)
 }
 
@@ -282,18 +314,34 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 	if pkt == nil {
 		info.Println("maybe not command, just normal message")
 	} else {
-		ch := this.chpool.pool[pkt.chidcli]
-		ch.conv = pkt.conv
-		ch.chidsrv = pkt.chidsrv
-		ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
-		ch.kcp.SetMtu(tunmtu)
-		// ch.kcp.WndSize(128, 128)
-		// ch.kcp.NoDelay(1, 10, 2, 1)
-		this.chpool.putClient(ch)
+		if pkt.command == CMDCONNFIN {
+			ch := this.chpool.pool[pkt.chidcli]
+			ch.conv = pkt.conv
+			ch.chidsrv = pkt.chidsrv
+			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+			ch.kcp.SetMtu(tunmtu)
+			// ch.kcp.WndSize(128, 128)
+			// ch.kcp.NoDelay(1, 10, 2, 1)
+			this.chpool.putClient(ch)
 
-		info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
-		// can read now，不能阻塞，开新的goroutine
-		go this.pollClientReadyRead(ch)
+			info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
+			// can read now，不能阻塞，开新的goroutine
+			go this.pollClientReadyRead(ch)
+		} else if pkt.command == CMDCLOSEACK {
+			if ch, ok := this.chpool.pool2[pkt.conv]; ok {
+				ch.server_socket_close = true
+				this.promiseChannelClose(ch)
+			} else {
+				info.Println("recv server close, but maybe client already closed",
+					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
+			}
+		} else if pkt.command == CMDCLOSEFIN1 {
+			ch := this.chpool.pool2[pkt.conv]
+			ch.server_socket_close = true
+			this.promiseChannelClose(ch)
+		} else {
+			errl.Println("wtf, unknown cmmand:", pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
+		}
 	}
 }
 

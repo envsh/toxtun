@@ -27,6 +27,7 @@ type KcpOutputEvent struct {
 	size  int
 	extra interface{}
 }
+type KcpCheckCloseEvent struct{}
 
 type NewConnEvent struct {
 	conn net.Conn
@@ -37,3 +38,7 @@ type ClientReadyReadEvent struct {
 	size int
 }
 type ServerReadyReadEvent ClientReadyReadEvent
+type ClientCloseEvent struct {
+	ch *Channel
+}
+type ServerCloseEvent ClientCloseEvent

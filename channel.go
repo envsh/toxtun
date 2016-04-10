@@ -45,7 +45,13 @@ type Channel struct {
 	port    string
 	conv    uint32
 	toxid   string // 仅用于服务器端
-	kcp     *KCP
+	kcp     *KCP   // 可用作控制kcp连接
+
+	// 关闭状态
+	client_socket_close bool
+	client_kcp_close    bool
+	server_socket_close bool
+	server_kcp_close    bool
 }
 
 func NewChannelClient(conn net.Conn) *Channel {
@@ -77,6 +83,18 @@ func (this *Channel) makeConnectFINPacket() *Packet {
 
 func (this *Channel) makeDataPacket(data string) *Packet {
 	pkt := NewPacket(this, CMDSENDDATA, data)
+	pkt.conv = this.conv
+	return pkt
+}
+
+func (this *Channel) makeCloseACKPacket() *Packet {
+	pkt := NewPacket(this, CMDCLOSEACK, "")
+	pkt.conv = this.conv
+	return pkt
+}
+
+func (this *Channel) makeCloseFIN1Packet() *Packet {
+	pkt := NewPacket(this, CMDCLOSEFIN1, "")
 	pkt.conv = this.conv
 	return pkt
 }
