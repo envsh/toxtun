@@ -386,8 +386,7 @@ func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 		if ch == nil {
 			info.Println("channel not found, maybe has some problem, maybe already closed", conv)
 			// TODO 应该给服务器回个关闭包
-			dbuf, _ := kcp_extract_data(buf)
-			pkt := parsePacket(dbuf)
+			pkt := NewBrokenPacket(conv)
 			ch := NewChannelFromPacket(pkt)
 			newpkt := ch.makeCloseACKPacket()
 			this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))

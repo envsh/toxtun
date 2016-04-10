@@ -165,6 +165,12 @@ func NewPacket(ch *Channel, command string, data string) *Packet {
 		remoteip: ch.ip, remoteport: ch.port}
 }
 
+func NewBrokenPacket(conv uint32) *Packet {
+	pkt := new(Packet)
+	pkt.conv = conv
+	return pkt
+}
+
 func (this *Packet) isconnack() bool {
 	return this.command == CMDCONNACK
 }

@@ -30,6 +30,7 @@ type Tunneld struct {
 	// kcpOutputChan       chan KcpOutputEvent
 	serverReadyReadChan chan ServerReadyReadEvent
 	serverCloseChan     chan ServerCloseEvent
+	channelGCChan       chan ChannelGCEvent
 }
 
 func NewTunneld() *Tunneld {
@@ -61,6 +62,7 @@ func (this *Tunneld) serve() {
 	this.kcpCheckCloseChan = make(chan KcpCheckCloseEvent, mpcsz)
 	// this.kcpReadyReadChan = make(chan KcpReadyReadEvent, 0)
 	// this.kcpOutputChan = make(chan KcpOutputEvent, 0)
+	this.channelGCChan = make(chan ChannelGCEvent, mpcsz)
 	this.serverReadyReadChan = make(chan ServerReadyReadEvent, mpcsz)
 	this.serverCloseChan = make(chan ServerCloseEvent, mpcsz)
 
@@ -91,6 +93,13 @@ func (this *Tunneld) serve() {
 		}
 	}()
 
+	go func() {
+		for {
+			time.Sleep(15 * time.Second)
+			this.channelGCChan <- ChannelGCEvent{}
+		}
+	}()
+
 	// like event handler
 	for {
 		select {
@@ -113,6 +122,8 @@ func (this *Tunneld) serve() {
 			this.serveKcp()
 		case <-this.kcpCheckCloseChan:
 			this.kcpCheckClose()
+		case <-this.channelGCChan:
+			this.channelGC()
 		}
 	}
 }
@@ -308,6 +319,15 @@ func (this *Tunneld) promiseChannelClose(ch *Channel) {
 		info.Println("what state:", ch.chidcli, ch.chidsrv, ch.conv,
 			ch.server_socket_close, ch.server_kcp_close, ch.client_socket_close)
 		panic("Ooops")
+	}
+}
+
+// TODO
+func (this *Tunneld) channelGC() {
+	for _, ch := range this.chpool.pool {
+		if ch == nil {
+		}
+
 	}
 }
 

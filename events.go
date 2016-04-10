@@ -48,3 +48,4 @@ type ServerCloseEvent ClientCloseEvent
 type ClientCheckACKEvent struct {
 	ch *Channel
 }
+type ChannelGCEvent struct{}
