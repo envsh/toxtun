@@ -3,6 +3,7 @@ package main
 import (
 	"net"
 	"sync"
+	"time"
 
 	"github.com/bitly/go-simplejson"
 )
@@ -45,19 +46,25 @@ type Channel struct {
 	port    string
 	conv    uint32
 	toxid   string // 仅用于服务器端
-	kcp     *KCP   // 可用作控制kcp连接
+	kcp     *KCP
 
 	// 关闭状态
 	client_socket_close bool
 	client_kcp_close    bool
 	server_socket_close bool
 	server_kcp_close    bool
+
+	// 连接超时，客户端使用
+	conn_begin_time time.Time
+	conn_try_times  int
+	conn_ack_recved bool
 }
 
 func NewChannelClient(conn net.Conn) *Channel {
 	ch := new(Channel)
 	ch.chidcli = nextChanid()
 	ch.conn = conn
+	ch.conn_begin_time = time.Now()
 
 	return ch
 }
@@ -66,6 +73,15 @@ func NewChannelWithId(chanid int) *Channel {
 	ch := new(Channel)
 	ch.chidsrv = nextChanid()
 	ch.chidcli = chanid
+	return ch
+}
+
+func NewChannelFromPacket(pkt *Packet) *Channel {
+	ch := new(Channel)
+	ch.chidcli = pkt.chidcli
+	ch.chidsrv = pkt.chidsrv
+	ch.conv = pkt.conv
+
 	return ch
 }
 

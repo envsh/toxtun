@@ -44,10 +44,11 @@ func makeTox(name string) *tox.Tox {
 		panic(nil)
 	}
 
-	r, err := t.Bootstrap(server[0].(string), server[1].(uint16), server[2].(string))
-	r2, err := t.AddTcpRelay(server[0].(string), server[1].(uint16), server[2].(string))
-	debug.Println("bootstrap:", r, err, r2)
-
+	/*
+		r, err := t.Bootstrap(server[0].(string), server[1].(uint16), server[2].(string))
+		r2, err := t.AddTcpRelay(server[0].(string), server[1].(uint16), server[2].(string))
+		debug.Println("bootstrap:", r, err, r2)
+	*/
 	pubkey := t.SelfGetPublicKey()
 	seckey := t.SelfGetSecretKey()
 	toxid := t.SelfGetAddress()

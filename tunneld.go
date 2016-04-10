@@ -197,9 +197,10 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 		return
 	}
 	debug.Println(len(buf), "//", size, "//", string(gopp.SubBytes(buf, 52)))
+	ch := extra.(*Channel)
 
 	msg := string([]byte{254}) + string(buf[:size])
-	err := this.tox.FriendSendLossyPacket(0, msg)
+	err := this.FriendSendLossyPacket(ch.toxid, msg)
 	// msg := string([]byte{191}) + string(buf[:size])
 	// err := this.tox.FriendSendLosslessPacket(0, msg)
 	if err != nil {
@@ -284,7 +285,7 @@ func (this *Tunneld) promiseChannelClose(ch *Channel) {
 		info.Println("server socket closed, kcp empty, close by server",
 			ch.chidcli, ch.chidsrv, ch.conv)
 		pkt := ch.makeCloseACKPacket()
-		n, err := this.tox.FriendSendMessage(0, string(pkt.toJson()))
+		n, err := this.FriendSendMessage(ch.toxid, string(pkt.toJson()))
 		if err != nil {
 			// 连接失败
 			errl.Println(err)
@@ -292,8 +293,7 @@ func (this *Tunneld) promiseChannelClose(ch *Channel) {
 		}
 
 		info.Println(n, gopp.SubStr(string(pkt.toJson()), 152))
-		delete(this.chpool.pool, ch.chidsrv)
-		delete(this.chpool.pool2, ch.conv)
+		this.chpool.rmServer(ch)
 	} else if ch.server_socket_close == true && ch.server_kcp_close == false && ch.client_socket_close == false {
 		info.Println("server socket closed, but kcp not empty", ch.chidcli, ch.chidsrv, ch.conv)
 	} else if ch.server_socket_close == false && ch.client_socket_close == true {
@@ -302,8 +302,7 @@ func (this *Tunneld) promiseChannelClose(ch *Channel) {
 		ch.conn.Close()
 	} else if ch.server_socket_close == true && ch.client_socket_close == true {
 		info.Println("both socket closed", ch.chidcli, ch.chidsrv, ch.conv)
-		delete(this.chpool.pool, ch.chidsrv)
-		delete(this.chpool.pool2, ch.conv)
+		this.chpool.rmServer(ch)
 		// ch.kcp.Close
 	} else {
 		info.Println("what state:", ch.chidcli, ch.chidsrv, ch.conv,
@@ -359,12 +358,11 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			// ch.kcp.WndSize(128, 128)
 			// ch.kcp.NoDelay(1, 10, 2, 1)
 			this.chpool.putServer(ch)
-			debug.Println(ch.kcp.interval)
 
 			info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
 
 			repkt := ch.makeConnectFINPacket()
-			r, err := this.tox.FriendSendMessage(friendNumber, string(repkt.toJson()))
+			r, err := this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
 			if err != nil {
 				errl.Println(err, r)
 			}
@@ -422,7 +420,7 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 		ch := this.chpool.pool2[conv]
 		debug.Println("conv:", conv, ch)
 		if ch == nil {
-			info.Println("channel not found, maybe has some problem, maybe closed", conv)
+			info.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		} else {
 			n := ch.kcp.Input(buf)
 			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
@@ -430,4 +428,20 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 	} else {
 		info.Println("unknown message:", buf[0])
 	}
+}
+
+func (this *Tunneld) FriendSendMessage(friendId string, message string) (uint32, error) {
+	friendNumber, err := this.tox.FriendByPublicKey(friendId)
+	if err != nil {
+		return 0, err
+	}
+	return this.tox.FriendSendMessage(friendNumber, message)
+}
+
+func (this *Tunneld) FriendSendLossyPacket(friendId string, message string) error {
+	friendNumber, err := this.tox.FriendByPublicKey(friendId)
+	if err != nil {
+		return err
+	}
+	return this.tox.FriendSendLossyPacket(friendNumber, message)
 }

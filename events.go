@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"time"
 )
 
 // ToxPollEvent
@@ -30,7 +31,9 @@ type KcpOutputEvent struct {
 type KcpCheckCloseEvent struct{}
 
 type NewConnEvent struct {
-	conn net.Conn
+	conn  net.Conn
+	times int
+	btime time.Time
 }
 type ClientReadyReadEvent struct {
 	ch   *Channel
@@ -42,3 +45,6 @@ type ClientCloseEvent struct {
 	ch *Channel
 }
 type ServerCloseEvent ClientCloseEvent
+type ClientCheckACKEvent struct {
+	ch *Channel
+}

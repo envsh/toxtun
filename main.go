@@ -11,9 +11,12 @@ const (
 	rdbufsz = 8192
 )
 
-var ()
+var (
+	kcp_mode = "default" // fast
+)
 
 func init() {
+	flag.StringVar(&kcp_mode, "kcp-mode", "default", "default|fast")
 }
 
 func main() {
