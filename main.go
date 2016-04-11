@@ -17,6 +17,9 @@ var (
 
 func init() {
 	flag.StringVar(&kcp_mode, "kcp-mode", "default", "default|fast")
+	if !(kcp_mode == "default" || kcp_mode == "fast") {
+		kcp_mode = "default"
+	}
 }
 
 func main() {

@@ -3,12 +3,13 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	// "time"
 	"tox"
 )
 
 var server = []interface{}{
+	"114.215.156.251", uint16(33445), "4575D94B71E432331BEB8CF5638CD78AD8385EACE76046AD35C440EF51C0D046",
+	"121.42.190.32", uint16(33445), "0246E8E1DDF5FFCA357E55C6BEA11490E5BFF274D4861DE51E33EA604EFAAA36",
 	"205.185.116.116", uint16(33445), "A179B09749AC826FF01F37A9613F6B57118AE014D4196A0E1105A98F93A54702",
 	// "127.0.0.1", uint16(33445), "398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52",
 }
@@ -24,7 +25,7 @@ func makeTox(name string) *tox.Tox {
 	if tox.FileExist(fname) {
 		data, err := ioutil.ReadFile(fname)
 		if err != nil {
-			log.Println(err)
+			errl.Println(err)
 		} else {
 			opt.Savedata_data = data
 			opt.Savedata_type = tox.SAVEDATA_TYPE_TOX_SAVE
@@ -44,16 +45,18 @@ func makeTox(name string) *tox.Tox {
 		panic(nil)
 	}
 
-	/*
-		r, err := t.Bootstrap(server[0].(string), server[1].(uint16), server[2].(string))
-		r2, err := t.AddTcpRelay(server[0].(string), server[1].(uint16), server[2].(string))
-		debug.Println("bootstrap:", r, err, r2)
-	*/
+	for i := 0; i < len(server)/3; i++ {
+		r := i * 3
+		r1, err := t.Bootstrap(server[r+0].(string), server[r+1].(uint16), server[r+2].(string))
+		r2, err := t.AddTcpRelay(server[r+0].(string), server[r+1].(uint16), server[r+2].(string))
+		info.Println("bootstrap:", r1, err, r2, i, r)
+	}
+
 	pubkey := t.SelfGetPublicKey()
 	seckey := t.SelfGetSecretKey()
 	toxid := t.SelfGetAddress()
 	debug.Println("keys:", pubkey, seckey, len(pubkey), len(seckey))
-	log.Println("toxid:", toxid)
+	info.Println("toxid:", toxid)
 
 	defaultName, err := t.SelfGetName()
 	humanName := nickPrefix + toxid[0:5]

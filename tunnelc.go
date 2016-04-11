@@ -147,11 +147,11 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 
 	if err != nil {
 		// 连接失败
-		errl.Println(err)
+		debug.Println(err)
 		this.chpool.rmClient(ch)
-		if times < 5 {
+		if times < 10 {
 			go func() {
-				time.Sleep(400 * time.Millisecond)
+				time.Sleep(500 * time.Millisecond)
 				this.newConnChan <- NewConnEvent{conn, times + 1, btime}
 			}()
 		} else {
@@ -161,7 +161,7 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 		return
 	} else {
 		go func() {
-			time.Sleep(5 * time.Second)
+			time.Sleep(15 * time.Second)
 			this.clientCheckACKChan <- ClientCheckACKEvent{ch}
 		}()
 	}
@@ -223,10 +223,9 @@ func (this *Tunnelc) processKcpReadyRead(ch *Channel) {
 func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 	if size <= 0 {
 		// 如果总是出现，并且不影响程序运行，那么也就不是bug了
-		// info.Println("wtf")
 		return
 	}
-	debug.Println(len(buf), size, string(gopp.SubBytes(buf, 52)))
+
 	if _, ok := extra.(*Channel); !ok {
 	}
 
@@ -235,9 +234,10 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 	// msg := string([]byte{191}) + string(buf[:size])
 	// err := this.tox.FriendSendLosslessPacket(0, msg)
 	if err != nil {
-		errl.Println(err)
+		debug.Println(err)
+	} else {
+		debug.Println("kcp->tox:", len(msg))
 	}
-	info.Println("kcp->tox:", len(msg))
 }
 
 func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
@@ -250,13 +250,22 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 			break
 		}
 
-		sendbuf := gopp.BytesDup(rbuf[:n])
-		// this.processClientReadyRead(ch, rbuf, n)
-		this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
+		// 控制kcp.WaitSnd()的大小
+		for {
+			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
+				sendbuf := gopp.BytesDup(rbuf[:n])
+				// this.processClientReadyRead(ch, rbuf, n)
+				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
+				break
+			} else {
+				time.Sleep(3 * time.Millisecond)
+			}
+		}
+
 	}
 
 	// 连接结束
-	info.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
+	debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
 	ch.client_socket_close = true
 	this.clientCloseChan <- ClientCloseEvent{ch}
 }
@@ -265,20 +274,19 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 	debug.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv)
 	if ch.client_socket_close == true && ch.server_socket_close == false {
 		pkt := ch.makeCloseACKPacket()
-		n, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
+		_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
 		if err != nil {
 			// 连接失败
-			errl.Println(err)
+			debug.Println(err)
 			return
 		}
-		debug.Println(n, gopp.SubStr(string(pkt.toJson()), 52))
 		this.chpool.rmClient(ch)
 	} else if ch.client_socket_close == true && ch.server_socket_close == true {
 		//
 		info.Println("both socket closed:", ch.chidcli, ch.chidsrv, ch.conv)
 		this.chpool.rmClient(ch)
 	} else if ch.client_socket_close == false && ch.server_socket_close == true {
-		info.Println("server socket closed, force close client", ch.chidcli, ch.chidsrv, ch.conv)
+		debug.Println("server socket closed, force close client", ch.chidcli, ch.chidsrv, ch.conv)
 		ch.conn.Close()
 	} else {
 		info.Println("what state:", ch.chidcli, ch.chidsrv, ch.conv,
@@ -291,7 +299,7 @@ func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
 	pkt := ch.makeDataPacket(sbuf)
 	sn := ch.kcp.Send(pkt.toJson())
-	info.Println("cli->kcp:", sn, ch.conv)
+	debug.Println("cli->kcp:", sn, ch.conv)
 }
 
 func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
@@ -303,9 +311,10 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 
 	wn, err := ch.conn.Write(buf)
 	if err != nil {
-		errl.Println(err)
+		debug.Println(err)
+	} else {
+		debug.Println("kcp->cli:", wn)
 	}
-	info.Println("kcp->cli:", wn)
 }
 
 //////////////
@@ -339,11 +348,14 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				ch.chidsrv = pkt.chidsrv
 				ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 				ch.kcp.SetMtu(tunmtu)
-				// ch.kcp.WndSize(128, 128)
-				// ch.kcp.NoDelay(1, 10, 2, 1)
+				if kcp_mode == "fast" {
+					ch.kcp.WndSize(128, 128)
+					ch.kcp.NoDelay(1, 10, 2, 1)
+				}
 				this.chpool.putClient(ch)
 
 				info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
+				ch.conn_ack_recved = true
 				// can read now，不能阻塞，开新的goroutine
 				go this.pollClientReadyRead(ch)
 			} else {
@@ -384,7 +396,7 @@ func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 		conv = binary.LittleEndian.Uint32(buf)
 		ch := this.chpool.pool2[conv]
 		if ch == nil {
-			info.Println("channel not found, maybe has some problem, maybe already closed", conv)
+			debug.Println("channel not found, maybe has some problem, maybe already closed", conv)
 			// TODO 应该给服务器回个关闭包
 			pkt := NewBrokenPacket(conv)
 			ch := NewChannelFromPacket(pkt)

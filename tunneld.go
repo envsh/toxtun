@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"net"
+
 	"time"
 
 	"gopp"
@@ -71,7 +72,6 @@ func (this *Tunneld) serve() {
 		for {
 			time.Sleep(30 * time.Millisecond)
 			this.toxPollChan <- ToxPollEvent{}
-			//iterate(this.tox)
 		}
 	}()
 	go func() {
@@ -82,7 +82,6 @@ func (this *Tunneld) serve() {
 				time.Sleep(30 * time.Millisecond)
 			}
 			this.kcpPollChan <- KcpPollEvent{}
-			//this.serveKcp()
 		}
 	}()
 
@@ -215,9 +214,10 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 	// msg := string([]byte{191}) + string(buf[:size])
 	// err := this.tox.FriendSendLosslessPacket(0, msg)
 	if err != nil {
-		errl.Println(err)
+		debug.Println(err)
+	} else {
+		debug.Println("kcp->tox:", len(msg), time.Now().String())
 	}
-	info.Println("kcp->tox:", len(msg), time.Now().String())
 }
 
 func (this *Tunneld) processKcpReadyRead(ch *Channel) {
@@ -242,7 +242,7 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 		if err != nil {
 			errl.Println(err)
 		}
-		info.Println("kcp->srv:", wn)
+		debug.Println("kcp->srv:", wn)
 	} else {
 	}
 }
@@ -267,17 +267,21 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 			break
 		}
 
-		// this.processServerReadyRead(ch, rbuf, n)
-		btime := time.Now()
-		debug.Println(btime.String())
-		sendbuf := gopp.BytesDup(rbuf[:n])
-		this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n}
-		etime := time.Now()
-		debug.Println(etime.String(), etime.Sub(btime).String())
+		// 控制kcp.WaitSnd()的大小
+		for {
+			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
+				// this.processServerReadyRead(ch, rbuf, n)
+				sendbuf := gopp.BytesDup(rbuf[:n])
+				this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n}
+				break
+			} else {
+				time.Sleep(3 * time.Millisecond)
+			}
+		}
 	}
 
 	// 连接结束
-	info.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
+	debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
 	ch.server_socket_close = true
 	this.serverCloseChan <- ServerCloseEvent{ch}
 }
@@ -286,30 +290,29 @@ func (this *Tunneld) processServerReadyRead(ch *Channel, buf []byte, size int) {
 	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
 	pkt := ch.makeDataPacket(sbuf)
 	sn := ch.kcp.Send(pkt.toJson())
-	info.Println("srv->kcp:", sn, size)
+	debug.Println("srv->kcp:", sn, size)
 }
 
 func (this *Tunneld) promiseChannelClose(ch *Channel) {
 	debug.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv)
 	if ch.server_socket_close == true && ch.server_kcp_close == true && ch.client_socket_close == false {
 		// server close and no data, connection finished
-		info.Println("server socket closed, kcp empty, close by server",
+		debug.Println("server socket closed, kcp empty, close by server",
 			ch.chidcli, ch.chidsrv, ch.conv)
 		pkt := ch.makeCloseACKPacket()
-		n, err := this.FriendSendMessage(ch.toxid, string(pkt.toJson()))
+		_, err := this.FriendSendMessage(ch.toxid, string(pkt.toJson()))
 		if err != nil {
 			// 连接失败
-			errl.Println(err)
+			debug.Println(err)
 			return
 		}
 
-		info.Println(n, gopp.SubStr(string(pkt.toJson()), 152))
 		this.chpool.rmServer(ch)
 	} else if ch.server_socket_close == true && ch.server_kcp_close == false && ch.client_socket_close == false {
-		info.Println("server socket closed, but kcp not empty", ch.chidcli, ch.chidsrv, ch.conv)
+		debug.Println("server socket closed, but kcp not empty", ch.chidcli, ch.chidsrv, ch.conv)
 	} else if ch.server_socket_close == false && ch.client_socket_close == true {
 		// 客户端先关闭，服务端无条件关闭，比较容易
-		info.Println("force close...", ch.chidcli, ch.chidsrv, ch.conv)
+		debug.Println("force close...", ch.chidcli, ch.chidsrv, ch.conv)
 		ch.conn.Close()
 	} else if ch.server_socket_close == true && ch.client_socket_close == true {
 		info.Println("both socket closed", ch.chidcli, ch.chidsrv, ch.conv)
@@ -375,8 +378,10 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			ch.toxid = friendId
 			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 			ch.kcp.SetMtu(tunmtu)
-			// ch.kcp.WndSize(128, 128)
-			// ch.kcp.NoDelay(1, 10, 2, 1)
+			if kcp_mode == "fast" {
+				ch.kcp.WndSize(128, 128)
+				ch.kcp.NoDelay(1, 10, 2, 1)
+			}
 			this.chpool.putServer(ch)
 
 			info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
@@ -384,7 +389,7 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			repkt := ch.makeConnectFINPacket()
 			r, err := this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
 			if err != nil {
-				errl.Println(err, r)
+				debug.Println(err, r)
 			}
 
 			// can connect backend now，不能阻塞，开新的goroutine
@@ -413,11 +418,9 @@ func (this *Tunneld) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 	buf := bytes.NewBufferString(message).Bytes()
 	if buf[0] == 254 {
 		buf = buf[1:]
-		var conv uint32
 		// kcp包前4字段为conv，little hacky
-		conv = binary.LittleEndian.Uint32(buf)
+		conv := binary.LittleEndian.Uint32(buf)
 		ch := this.chpool.pool2[conv]
-		debug.Println("conv:", conv, ch)
 		if ch == nil {
 			info.Println("channel not found, maybe has some problem, maybe closed", conv)
 		} else {
@@ -434,11 +437,9 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 	buf := bytes.NewBufferString(message).Bytes()
 	if buf[0] == 191 {
 		buf = buf[1:]
-		var conv uint32
 		// kcp包前4字段为conv，little hacky
-		conv = binary.LittleEndian.Uint32(buf)
+		conv := binary.LittleEndian.Uint32(buf)
 		ch := this.chpool.pool2[conv]
-		debug.Println("conv:", conv, ch)
 		if ch == nil {
 			info.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		} else {
