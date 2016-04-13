@@ -254,9 +254,9 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 		errl.Println(err)
 	}
 	ch.conn = conn
-	info.Println("connected to:", conn.RemoteAddr().String())
+	info.Println("connected to:", conn.RemoteAddr().String(), ch.chidcli, ch.chidsrv, ch.conv)
 
-	debug.Println("copying server to client:", ch.chidsrv)
+	debug.Println("copying server to client:", ch.chidsrv, ch.chidsrv, ch.conv)
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
 	// TODO 使用内存池
 	rbuf := make([]byte, rdbufsz)

@@ -23,7 +23,7 @@
 
 KCP+tox(lossy packet)默认配置：100K+/s
 
-开启KCP NoDelay模式后：K/s
+开启KCP NoDelay模式后：260K/s
 
 ### 线程模型
 

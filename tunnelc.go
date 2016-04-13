@@ -246,11 +246,11 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 	for {
 		n, err := ch.conn.Read(rbuf)
 		if err != nil {
-			info.Println("chan read:", err)
+			info.Println("chan read:", err, ch.chidcli, ch.chidsrv, ch.conv)
 			break
 		}
 
-		// 控制kcp.WaitSnd()的大小
+		// 应用层控制kcp.WaitSnd()的大小
 		for {
 			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
 				sendbuf := gopp.BytesDup(rbuf[:n])

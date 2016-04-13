@@ -16,6 +16,9 @@ import (
 	"github.com/cyfdecyf/color"
 )
 
+// TODO 最后一条日志的重复归并，
+// 即如果连续出现相同的日志，则不再输出更多相同的行，而是对重复的行进行计数修改。
+// 这种功能在emacs的*Message*中看到过。
 type infoLogging bool
 type debugLogging bool
 type errorLogging bool
