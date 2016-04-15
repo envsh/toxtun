@@ -138,12 +138,16 @@ func (this *Tunnelc) serveTcp() {
 
 func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 	ch := NewChannelClient(conn)
-	ch.ip = "127.0.0.1"
-	ch.port = "8118"
+	// ch.ip = "127.0.0.1"
+	// ch.port = "8118"
+	ch.ip = config.recs[0].rhost
+	ch.port = fmt.Sprintf("%d", config.recs[0].rport)
 	this.chpool.putClient(ch)
 
+	// toxid := toxtunid
+	toxid := config.recs[0].rpubkey
 	pkt := ch.makeConnectACKPacket()
-	_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
+	_, err := this.FriendSendMessage(toxid, string(pkt.toJson()))
 
 	if err != nil {
 		// 连接失败
@@ -176,9 +180,6 @@ func (this *Tunnelc) clientCheckACKRecved(ch *Channel) {
 }
 
 //////////
-func iclock() int32 {
-	return int32((time.Now().UnixNano() / 1000000) & 0xffffffff)
-}
 func (this *Tunnelc) serveKcp() {
 	zbuf := make([]byte, 0)
 	if true {

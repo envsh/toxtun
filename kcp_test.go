@@ -10,10 +10,6 @@ import (
 	"time"
 )
 
-func iclock() int32 {
-	return int32((time.Now().UnixNano() / 1000000) & 0xffffffff)
-}
-
 type DelayPacket struct {
 	_ptr  []byte
 	_size int
@@ -133,16 +129,16 @@ func test(mode int) {
 
 	// 创建两个端点的 kcp对象，第一个参数 conv是会话编号，同一个会话需要相同
 	// 最后一个是 user参数，用来传递标识
-	output1 := func(buf []byte, size int) {
+	output1 := func(buf []byte, size int, extra interface{}) {
 		if vnet.send(0, buf, size) != 1 {
 		}
 	}
-	output2 := func(buf []byte, size int) {
+	output2 := func(buf []byte, size int, extra interface{}) {
 		if vnet.send(1, buf, size) != 1 {
 		}
 	}
-	kcp1 := NewKCP(0x11223344, output1)
-	kcp2 := NewKCP(0x11223344, output2)
+	kcp1 := NewKCP(0x11223344, output1, nil)
+	kcp2 := NewKCP(0x11223344, output2, nil)
 
 	current := uint32(iclock())
 	slap := current + 20
