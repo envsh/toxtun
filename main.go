@@ -43,6 +43,9 @@ func main() {
 		mode = argv[argc-1]
 	}
 
+	go NewStatServer().serve()
+	appevt.Trigger("appmode", mode)
+
 	switch mode {
 	case "client":
 		if config == nil {

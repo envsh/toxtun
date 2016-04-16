@@ -133,6 +133,7 @@ func (this *Tunnelc) serveTcp() {
 		}
 		// info.Println(c)
 		this.newConnChan <- NewConnEvent{c, 0, time.Now()}
+		appevt.Trigger("newconn")
 	}
 }
 
@@ -161,6 +162,7 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 		} else {
 			info.Println("connect timeout:", times, time.Now().Sub(btime))
 			conn.Close()
+			appevt.Trigger("connerr")
 		}
 		return
 	} else {
@@ -168,6 +170,8 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 			time.Sleep(15 * time.Second)
 			this.clientCheckACKChan <- ClientCheckACKEvent{ch}
 		}()
+		appevt.Trigger("connok")
+		appevt.Trigger("connact", 1)
 	}
 }
 
@@ -176,6 +180,7 @@ func (this *Tunnelc) clientCheckACKRecved(ch *Channel) {
 		info.Println("wait connection ack timeout", time.Now().Sub(ch.conn_begin_time))
 		this.chpool.rmClient(ch)
 		ch.conn.Close()
+		appevt.Trigger("connerr")
 	}
 }
 
@@ -257,18 +262,19 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				// this.processClientReadyRead(ch, rbuf, n)
 				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
+				appevt.Trigger("recvbytes", n)
 				break
 			} else {
 				time.Sleep(3 * time.Millisecond)
 			}
 		}
-
 	}
 
 	// 连接结束
 	debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
 	ch.client_socket_close = true
 	this.clientCloseChan <- ClientCloseEvent{ch}
+	appevt.Trigger("connact", -1)
 }
 
 func (this *Tunnelc) promiseChannelClose(ch *Channel) {
@@ -315,6 +321,7 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 		debug.Println(err)
 	} else {
 		debug.Println("kcp->cli:", wn)
+		appevt.Trigger("sendbytes", wn)
 	}
 }
 
@@ -326,6 +333,12 @@ func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status uint32, ext
 		t.WriteSavedata(fname)
 	}
 	info.Println(status)
+	if status == 0 {
+		appevt.Trigger("selfonline", false)
+		appevt.Trigger("selfoffline")
+	} else {
+		appevt.Trigger("selfonline", true)
+	}
 }
 
 func (this *Tunnelc) onToxnetFriendRequest(t *tox.Tox, friendId string, message string, userData interface{}) {
@@ -335,6 +348,12 @@ func (this *Tunnelc) onToxnetFriendRequest(t *tox.Tox, friendId string, message 
 func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status uint32, userData interface{}) {
 	fid, _ := this.tox.FriendGetPublicKey(friendNumber)
 	info.Println(friendNumber, status, fid)
+	if status == 0 {
+		appevt.Trigger("peeronline", false)
+		appevt.Trigger("peeroffline")
+	} else {
+		appevt.Trigger("peeronline", true)
+	}
 }
 
 func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {

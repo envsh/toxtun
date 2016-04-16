@@ -243,6 +243,7 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 			errl.Println(err)
 		}
 		debug.Println("kcp->srv:", wn)
+		appevt.Trigger("recvbytes", wn)
 	} else {
 	}
 }
@@ -273,6 +274,7 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 				// this.processServerReadyRead(ch, rbuf, n)
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n}
+				appevt.Trigger("sendbytes", n)
 				break
 			} else {
 				time.Sleep(3 * time.Millisecond)
@@ -284,6 +286,7 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 	debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
 	ch.server_socket_close = true
 	this.serverCloseChan <- ServerCloseEvent{ch}
+	appevt.Trigger("connact", -1)
 }
 
 func (this *Tunneld) processServerReadyRead(ch *Channel, buf []byte, size int) {
@@ -337,6 +340,12 @@ func (this *Tunneld) channelGC() {
 ////////////////
 func (this *Tunneld) onToxnetSelfConnectionStatus(t *tox.Tox, status uint32, extra interface{}) {
 	info.Println(status)
+	if status == 0 {
+		appevt.Trigger("selfonline", false)
+		appevt.Trigger("selfoffline")
+	} else {
+		appevt.Trigger("selfonline", true)
+	}
 }
 
 func (this *Tunneld) onToxnetFriendRequest(t *tox.Tox, friendId string, message string, userData interface{}) {
@@ -349,6 +358,12 @@ func (this *Tunneld) onToxnetFriendRequest(t *tox.Tox, friendId string, message 
 func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status uint32, userData interface{}) {
 	fid, _ := this.tox.FriendGetPublicKey(friendNumber)
 	info.Println(friendNumber, status, fid)
+	if status == 0 {
+		appevt.Trigger("peeronline", false)
+		appevt.Trigger("peeroffline")
+	} else {
+		appevt.Trigger("peeronline", true)
+	}
 }
 
 // a tool function
@@ -392,6 +407,7 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				debug.Println(err, r)
 			}
 
+			appevt.Trigger("connact", 1)
 			// can connect backend now，不能阻塞，开新的goroutine
 			go this.pollServerReadyRead(ch)
 		} else if pkt.command == CMDCLOSEACK {

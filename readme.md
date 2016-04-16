@@ -1,9 +1,19 @@
 
+### 依赖包
+
+    go get -u github.com/cyfdecyf/color
+    go get -u github.com/bitly/go-simplejson
+    go get -u github.com/GianlucaGuarini/go-observable
+    go get -u github.com/go-ini/ini
+    
+
 ### TODOs
-- [ ] 配置参数
+- [x] 配置参数
 - [ ] 统计服务模块
 - [ ] 多tunnel支持
 - [ ] 数据编码：JSON=>MsgPack
+- [ ] toxnet/friend失联重连
+- [ ] 关闭连接原因
 
 
 ### 连接流程

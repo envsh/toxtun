@@ -131,21 +131,25 @@ func NewChannelPool() *ChannelPool {
 func (this *ChannelPool) putClient(ch *Channel) {
 	this.pool[ch.chidcli] = ch
 	this.pool2[ch.conv] = ch
+	appevt.Trigger("chanact", 1)
 }
 
 func (this *ChannelPool) putServer(ch *Channel) {
 	this.pool[ch.chidsrv] = ch
 	this.pool2[ch.conv] = ch
+	appevt.Trigger("chanact", 1)
 }
 
 func (this *ChannelPool) rmClient(ch *Channel) {
 	delete(this.pool, ch.chidcli)
 	delete(this.pool2, ch.conv)
+	appevt.Trigger("chanact", -1)
 }
 
 func (this *ChannelPool) rmServer(ch *Channel) {
 	delete(this.pool, ch.chidsrv)
 	delete(this.pool2, ch.conv)
+	appevt.Trigger("chanact", -1)
 }
 
 ////////////
