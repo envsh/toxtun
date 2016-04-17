@@ -20,17 +20,23 @@ type Stats struct {
 	minMem       uint64
 	maxMem       uint64
 
-	connCount       int
-	connErrorCount  int
-	connOKCount     int
-	connMinTime     time.Duration
-	connMaxTime     time.Duration
-	connAvgTime     time.Duration
+	connCount      int
+	connErrorCount int
+	connOKCount    int
+	connMinTime    time.Duration
+	connMaxTime    time.Duration
+	connAvgTime    time.Duration
+	// 真正的成功的网络连接数
 	connActiveCount int
 	chanActiveCount int
+	chanRealCount   int
+	chan2RealCount  int
+	closeReasons    map[string]int
 
-	recvLen uint64
-	sendLen uint64
+	reqLen     uint64
+	respLen    uint64
+	reqNetLen  uint64
+	respNetLen uint64
 
 	appmode          string
 	selfOnline       bool
@@ -39,7 +45,14 @@ type Stats struct {
 	peerOfflineCount int
 }
 
-var sts = Stats{}
+func NewStates() *Stats {
+	crs := make(map[string]int, 0)
+	sts := new(Stats)
+	sts.closeReasons = crs
+	return sts
+}
+
+var sts = NewStates()
 var appevt = observable.New()
 
 func init() {
@@ -58,10 +71,16 @@ func processEvent(args ...interface{}) {
 		sts.connActiveCount += args[1].(int)
 	case "chanact":
 		sts.chanActiveCount += args[1].(int)
-	case "recvbytes":
-		sts.recvLen += uint64(args[1].(int))
-	case "sendbytes":
-		sts.sendLen += uint64(args[1].(int))
+		sts.chanRealCount = args[2].(int)
+		sts.chan2RealCount = args[3].(int)
+	case "closereason":
+		sts.closeReasons[args[1].(string)] += 1
+	case "reqbytes":
+		sts.reqLen += uint64(args[1].(int))
+		sts.reqNetLen += uint64(args[2].(int))
+	case "respbytes":
+		sts.respLen += uint64(args[1].(int))
+		sts.respNetLen += uint64(args[2].(int))
 	case "selfonline":
 		sts.selfOnline = args[1].(bool)
 	case "peeronline":
@@ -115,25 +134,31 @@ func indexHandler(w http.ResponseWriter, req *http.Request) {
 	wb := bytes.NewBufferString("")
 	str := fmt.Sprintf("toxtun stats: %v\n", sts.appmode)
 
-	str = str + fmt.Sprintf("Online Status: self: %v/%v, peer: %v/%v\n",
+	str += fmt.Sprintf("Online Status: self: %v/%v, peer: %v/%v\n",
 		sts.selfOnline, sts.selfOfflineCount, sts.peerOnline, sts.peerOfflineCount)
-	str = str + fmt.Sprintf("Connections: total: %v, ok: %v, err: %v, active: %v, chans: %v\n",
-		sts.connCount, sts.connOKCount, sts.connErrorCount, sts.connActiveCount, sts.chanActiveCount)
+	str += fmt.Sprintf("Connections: total: %v, ok: %v, err: %v, active: %v, chans: %v, real1: %v, real2: %v\n",
+		sts.connCount, sts.connOKCount, sts.connErrorCount, sts.connActiveCount, sts.chanActiveCount,
+		sts.chanRealCount, sts.chan2RealCount)
+	str += fmt.Sprintf("Close Reasons: %v\n", sts.closeReasons)
 
 	dsrate := float64(0)
-	if sts.recvLen > 0 {
-		dsrate = float64(sts.sendLen) / float64(sts.recvLen)
+	if sts.reqLen > 0 {
+		dsrate = float64(sts.respLen) / float64(sts.reqLen)
 	}
-	str = str + fmt.Sprintf("DataStream: recv: %v, send: %v, r/s: 1/%.0f\n",
-		sts.recvLen, sts.sendLen, dsrate)
+	nsrate := float64(0)
+	if sts.respLen > 0 {
+		nsrate = float64(sts.respNetLen) / float64(sts.respLen)
+	}
+	str += fmt.Sprintf("DataStream: req: %v, resp: %v, r/s: 1/%.0f, reqnet: %v, respnet: %v, cost: %.2f\n",
+		sts.reqLen, sts.respLen, dsrate, sts.reqNetLen, sts.respNetLen, nsrate)
 
-	str = str + fmt.Sprintf("goroutines: cur: %v, max: %v, min: %v\n",
+	str += fmt.Sprintf("goroutines: cur: %v, max: %v, min: %v\n",
 		rnum, sts.maxGoRoutine, sts.minGoRoutine)
-	str = str + fmt.Sprintf("memory: cur: %v, max: %v, min: %v, total: %v\n",
+	str += fmt.Sprintf("memory: cur: %v, max: %v, min: %v, total: %v\n",
 		msts.Alloc, sts.maxMem, sts.minMem, msts.TotalAlloc)
 
-	str = str + fmt.Sprintf("\nGo internals: %v\n", "")
-	str = str + fmt.Sprintf("goroutines: %v\n", rnum)
+	str += fmt.Sprintf("\nGo internals: %v\n", "")
+	str += fmt.Sprintf("goroutines: %v\n", rnum)
 	jso := simplejson.New()
 	jso.Set("MemStats", msts)
 	jbuf, err := jso.Encode()
@@ -144,8 +169,8 @@ func indexHandler(w http.ResponseWriter, req *http.Request) {
 	jstr, err := jso.Get("MemStats").EncodePretty()
 	if err != nil {
 	}
-	str = str + "MemStats:\n"
-	str = str + string(jstr)
+	str += "MemStats:\n"
+	str += string(jstr)
 	// str = str + spew.Sdump("mem stats: %v\n", msts)
 
 	wb.WriteString(str)

@@ -170,8 +170,6 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 			time.Sleep(15 * time.Second)
 			this.clientCheckACKChan <- ClientCheckACKEvent{ch}
 		}()
-		appevt.Trigger("connok")
-		appevt.Trigger("connact", 1)
 	}
 }
 
@@ -181,6 +179,8 @@ func (this *Tunnelc) clientCheckACKRecved(ch *Channel) {
 		this.chpool.rmClient(ch)
 		ch.conn.Close()
 		appevt.Trigger("connerr")
+		ch.addCloseReason("connect_timeout")
+		appevt.Trigger("closereason", ch.closeReason())
 	}
 }
 
@@ -262,7 +262,6 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				// this.processClientReadyRead(ch, rbuf, n)
 				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
-				appevt.Trigger("recvbytes", n)
 				break
 			} else {
 				time.Sleep(3 * time.Millisecond)
@@ -284,17 +283,24 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 		_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
 		if err != nil {
 			// 连接失败
-			debug.Println(err)
+			info.Println(err, ch.chidcli, ch.chidsrv, ch.conv)
 			return
 		}
+		ch.addCloseReason("client_close")
+		info.Println("client socket closed, notify server.", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		this.chpool.rmClient(ch)
+		appevt.Trigger("closereason", ch.closeReason())
 	} else if ch.client_socket_close == true && ch.server_socket_close == true {
 		//
-		info.Println("both socket closed:", ch.chidcli, ch.chidsrv, ch.conv)
+		ch.addCloseReason("both_close")
+		info.Println("both socket closed:", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		this.chpool.rmClient(ch)
+		appevt.Trigger("closereason", ch.closeReason())
 	} else if ch.client_socket_close == false && ch.server_socket_close == true {
-		debug.Println("server socket closed, force close client", ch.chidcli, ch.chidsrv, ch.conv)
+		ch.addCloseReason("server_close")
+		info.Println("server socket closed, force close client", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		ch.conn.Close()
+		appevt.Trigger("closereason", ch.closeReason())
 	} else {
 		info.Println("what state:", ch.chidcli, ch.chidsrv, ch.conv,
 			ch.server_socket_close, ch.server_kcp_close, ch.client_socket_close)
@@ -307,6 +313,7 @@ func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 	pkt := ch.makeDataPacket(sbuf)
 	sn := ch.kcp.Send(pkt.toJson())
 	debug.Println("cli->kcp:", sn, ch.conv)
+	appevt.Trigger("reqbytes", size, len(pkt.toJson())+25)
 }
 
 func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
@@ -321,7 +328,7 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 		debug.Println(err)
 	} else {
 		debug.Println("kcp->cli:", wn)
-		appevt.Trigger("sendbytes", wn)
+		appevt.Trigger("respbytes", wn, len(pkt.data)+25)
 	}
 }
 
@@ -372,9 +379,11 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 					ch.kcp.WndSize(128, 128)
 					ch.kcp.NoDelay(1, 10, 2, 1)
 				}
-				this.chpool.putClient(ch)
+				this.chpool.putClientLacks(ch)
 
 				info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
+				appevt.Trigger("connok")
+				appevt.Trigger("connact", 1)
 				ch.conn_ack_recved = true
 				// can read now，不能阻塞，开新的goroutine
 				go this.pollClientReadyRead(ch)

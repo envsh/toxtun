@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,8 @@ type Channel struct {
 	conn_begin_time time.Time
 	conn_try_times  int
 	conn_ack_recved bool
+
+	close_reason []string
 }
 
 func NewChannelClient(conn net.Conn) *Channel {
@@ -65,6 +68,7 @@ func NewChannelClient(conn net.Conn) *Channel {
 	ch.chidcli = nextChanid()
 	ch.conn = conn
 	ch.conn_begin_time = time.Now()
+	ch.close_reason = make([]string, 0)
 
 	return ch
 }
@@ -115,6 +119,14 @@ func (this *Channel) makeCloseFIN1Packet() *Packet {
 	return pkt
 }
 
+func (this *Channel) addCloseReason(reason string) {
+	this.close_reason = append(this.close_reason, reason)
+}
+
+func (this *Channel) closeReason() string {
+	return strings.Join(this.close_reason, ",")
+}
+
 ///////////
 type ChannelPool struct {
 	pool  map[int]*Channel
@@ -130,26 +142,42 @@ func NewChannelPool() *ChannelPool {
 }
 func (this *ChannelPool) putClient(ch *Channel) {
 	this.pool[ch.chidcli] = ch
+	if ch.conv > 0 {
+		this.pool2[ch.conv] = ch
+	}
+	appevt.Trigger("chanact", 1, len(this.pool), len(this.pool2))
+}
+
+// put lacked
+func (this *ChannelPool) putClientLacks(ch *Channel) {
+	if _, ok := this.pool[ch.chidcli]; !ok {
+	}
 	this.pool2[ch.conv] = ch
-	appevt.Trigger("chanact", 1)
+	appevt.Trigger("chanact", 0, len(this.pool), len(this.pool2))
 }
 
 func (this *ChannelPool) putServer(ch *Channel) {
 	this.pool[ch.chidsrv] = ch
 	this.pool2[ch.conv] = ch
-	appevt.Trigger("chanact", 1)
+	appevt.Trigger("chanact", 1, len(this.pool), len(this.pool2))
 }
 
 func (this *ChannelPool) rmClient(ch *Channel) {
+	if _, ok := this.pool[ch.chidcli]; !ok {
+		panic(ch.chidcli)
+	}
 	delete(this.pool, ch.chidcli)
+	if _, ok := this.pool2[ch.conv]; !ok {
+		// panic(ch.conv)
+	}
 	delete(this.pool2, ch.conv)
-	appevt.Trigger("chanact", -1)
+	appevt.Trigger("chanact", -1, len(this.pool), len(this.pool2))
 }
 
 func (this *ChannelPool) rmServer(ch *Channel) {
 	delete(this.pool, ch.chidsrv)
 	delete(this.pool2, ch.conv)
-	appevt.Trigger("chanact", -1)
+	appevt.Trigger("chanact", -1, len(this.pool), len(this.pool2))
 }
 
 ////////////
