@@ -147,7 +147,7 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 
 	// toxid := toxtunid
 	toxid := config.recs[0].rpubkey
-	pkt := ch.makeConnectACKPacket()
+	pkt := ch.makeConnectSYNPacket()
 	_, err := this.FriendSendMessage(toxid, string(pkt.toJson()))
 
 	if err != nil {
@@ -216,9 +216,7 @@ func (this *Tunnelc) processKcpReadyRead(ch *Channel) {
 	}
 
 	pkt := parsePacket(buf)
-	if pkt.isconnfin() {
-		panic(123)
-	} else if pkt.isdata() {
+	if pkt.isdata() {
 		ch := this.chpool.pool[pkt.chidcli]
 		this.copyServer2Client(ch, pkt)
 	} else {
@@ -277,9 +275,9 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 }
 
 func (this *Tunnelc) promiseChannelClose(ch *Channel) {
-	debug.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv)
+	info.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv)
 	if ch.client_socket_close == true && ch.server_socket_close == false {
-		pkt := ch.makeCloseACKPacket()
+		pkt := ch.makeCloseFINPacket()
 		_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
 		if err != nil {
 			// 连接失败
@@ -299,6 +297,7 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 	} else if ch.client_socket_close == false && ch.server_socket_close == true {
 		ch.addCloseReason("server_close")
 		info.Println("server socket closed, force close client", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
+		ch.client_socket_close = true // ch.conn真正关闭可能有延时，造成此处重复处理。提前设置关闭标识。
 		ch.conn.Close()
 		appevt.Trigger("closereason", ch.closeReason())
 	} else {
@@ -369,7 +368,7 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 	if pkt == nil {
 		info.Println("maybe not command, just normal message")
 	} else {
-		if pkt.command == CMDCONNFIN {
+		if pkt.command == CMDCONNACK {
 			if ch, ok := this.chpool.pool[pkt.chidcli]; ok {
 				ch.conv = pkt.conv
 				ch.chidsrv = pkt.chidsrv
@@ -391,10 +390,10 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				info.Println("maybe conn ack response timeout", pkt.chidcli, pkt.chidsrv, pkt.conv)
 				// TODO 应该给服务器回个关闭包
 				ch := NewChannelFromPacket(pkt)
-				newpkt := ch.makeCloseACKPacket()
+				newpkt := ch.makeCloseFINPacket()
 				this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
 			}
-		} else if pkt.command == CMDCLOSEACK {
+		} else if pkt.command == CMDCLOSEFIN {
 			if ch, ok := this.chpool.pool2[pkt.conv]; ok {
 				ch.server_socket_close = true
 				this.promiseChannelClose(ch)
@@ -402,10 +401,6 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				info.Println("recv server close, but maybe client already closed",
 					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
 			}
-		} else if pkt.command == CMDCLOSEFIN1 {
-			ch := this.chpool.pool2[pkt.conv]
-			ch.server_socket_close = true
-			this.promiseChannelClose(ch)
 		} else {
 			errl.Println("wtf, unknown cmmand:", pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
 		}
@@ -425,11 +420,12 @@ func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 		conv = binary.LittleEndian.Uint32(buf)
 		ch := this.chpool.pool2[conv]
 		if ch == nil {
-			debug.Println("channel not found, maybe has some problem, maybe already closed", conv)
+			info.Println("channel not found, maybe has some problem, maybe already closed", conv)
 			// TODO 应该给服务器回个关闭包
+			// TODO 这个地方发送的包容易出现重复，但是需要服务端处理
 			pkt := NewBrokenPacket(conv)
 			ch := NewChannelFromPacket(pkt)
-			newpkt := ch.makeCloseACKPacket()
+			newpkt := ch.makeCloseFINPacket()
 			this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
 		} else {
 			n := ch.kcp.Input(buf)

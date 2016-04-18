@@ -17,24 +17,35 @@ const (
 	CMDKEYREMIP        = "remip"
 	CMDKEYREMPORT      = "remport"
 	CMDKEYCONV         = "conv"
+	CMDKEYMSGID        = "msgid"
 
-	CMDCONNACK   = "connect_ack"
-	CMDCONNFIN   = "connect_fin"
-	CMDSENDDATA  = "send_data"
-	CMDCLOSEACK  = "close_ack"
-	CMDCLOSEFIN1 = "close_fin1"
-	CMDCLOSEFIN2 = "close_fin2"
+	CMDCONNSYN  = "connect_syn"
+	CMDCONNACK  = "connect_ack"
+	CMDCLOSEFIN = "close_fin"
+	// CMDCLOSEACK = "close_ack"
+	CMDSENDDATA = "send_data"
 )
 
-var chanid = 10000
-var chanlock sync.Mutex
+var chanid0 = 10000
+var chanidlock sync.Mutex
+var msgid0 = uint64(10000)
+var msgidlock sync.Mutex
 
 func nextChanid() int {
-	chanlock.Lock()
-	defer chanlock.Unlock()
+	chanidlock.Lock()
+	defer chanidlock.Unlock()
 
-	id := chanid
-	chanid += 1
+	id := chanid0
+	chanid0 += 1
+	return id
+}
+
+func nextMsgid() uint64 {
+	msgidlock.Lock()
+	defer msgidlock.Unlock()
+
+	id := msgid0
+	msgid0 += 1
 	return id
 }
 
@@ -89,14 +100,14 @@ func NewChannelFromPacket(pkt *Packet) *Channel {
 	return ch
 }
 
-func (this *Channel) makeConnectACKPacket() *Packet {
-	pkt := NewPacket(this, CMDCONNACK, "")
+func (this *Channel) makeConnectSYNPacket() *Packet {
+	pkt := NewPacket(this, CMDCONNSYN, "")
 	pkt.conv = this.conv
 	return pkt
 }
 
-func (this *Channel) makeConnectFINPacket() *Packet {
-	pkt := NewPacket(this, CMDCONNFIN, "")
+func (this *Channel) makeConnectACKPacket() *Packet {
+	pkt := NewPacket(this, CMDCONNACK, "")
 	pkt.conv = this.conv
 	return pkt
 }
@@ -107,20 +118,33 @@ func (this *Channel) makeDataPacket(data string) *Packet {
 	return pkt
 }
 
+func (this *Channel) makeCloseFINPacket() *Packet {
+	pkt := NewPacket(this, CMDCLOSEFIN, "")
+	pkt.conv = this.conv
+	return pkt
+}
+
+/*
 func (this *Channel) makeCloseACKPacket() *Packet {
 	pkt := NewPacket(this, CMDCLOSEACK, "")
 	pkt.conv = this.conv
 	return pkt
 }
-
-func (this *Channel) makeCloseFIN1Packet() *Packet {
-	pkt := NewPacket(this, CMDCLOSEFIN1, "")
-	pkt.conv = this.conv
-	return pkt
-}
+*/
 
 func (this *Channel) addCloseReason(reason string) {
+	for i := 0; i < len(this.close_reason); i++ {
+		if reason == this.close_reason[i] {
+			info.Println("reason already exists, maybe loop,", reason, this.closeReason())
+			break
+		}
+	}
+
 	this.close_reason = append(this.close_reason, reason)
+	if len(this.close_reason) > 5 {
+		info.Println(this.chidcli, this.chidsrv, this.conv)
+		panic("wtf")
+	}
 }
 
 func (this *Channel) closeReason() string {
@@ -190,25 +214,27 @@ type Packet struct {
 	remoteip   string
 	remoteport string
 	conv       uint32
+	msgid      uint64
 }
 
 func NewPacket(ch *Channel, command string, data string) *Packet {
 	return &Packet{chidcli: ch.chidcli, chidsrv: ch.chidsrv, command: command, data: data,
-		remoteip: ch.ip, remoteport: ch.port}
+		remoteip: ch.ip, remoteport: ch.port, msgid: nextMsgid()}
 }
 
 func NewBrokenPacket(conv uint32) *Packet {
 	pkt := new(Packet)
 	pkt.conv = conv
+	pkt.msgid = nextMsgid()
 	return pkt
+}
+
+func (this *Packet) isconnsyn() bool {
+	return this.command == CMDCONNSYN
 }
 
 func (this *Packet) isconnack() bool {
 	return this.command == CMDCONNACK
-}
-
-func (this *Packet) isconnfin() bool {
-	return this.command == CMDCONNFIN
 }
 
 func (this *Packet) isdata() bool {
@@ -224,6 +250,7 @@ func (this *Packet) toJson() []byte {
 	jso.Set(CMDKEYREMIP, this.remoteip)
 	jso.Set(CMDKEYREMPORT, this.remoteport)
 	jso.Set(CMDKEYCONV, this.conv)
+	jso.Set(CMDKEYMSGID, this.msgid)
 
 	jsb, err := jso.Encode()
 	if err != nil {
@@ -246,6 +273,7 @@ func parsePacket(buf []byte) *Packet {
 	pkt.remoteip = jso.Get(CMDKEYREMIP).MustString()
 	pkt.remoteport = jso.Get(CMDKEYREMPORT).MustString()
 	pkt.conv = uint32(jso.Get(CMDKEYCONV).MustUint64())
+	pkt.msgid = jso.Get(CMDKEYMSGID).MustUint64()
 
 	return pkt
 }

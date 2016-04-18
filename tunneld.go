@@ -264,7 +264,7 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 	for {
 		n, err := ch.conn.Read(rbuf)
 		if err != nil {
-			errl.Println(err)
+			errl.Println(err, ch.chidsrv, ch.chidsrv, ch.conv)
 			break
 		}
 
@@ -300,7 +300,7 @@ func (this *Tunneld) promiseChannelClose(ch *Channel) {
 	debug.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv)
 	if ch.server_socket_close == true && ch.server_kcp_close == true && ch.client_socket_close == false {
 		// server close and no data, connection finished
-		pkt := ch.makeCloseACKPacket()
+		pkt := ch.makeCloseFINPacket()
 		_, err := this.FriendSendMessage(ch.toxid, string(pkt.toJson()))
 		if err != nil {
 			// 连接失败
@@ -321,6 +321,7 @@ func (this *Tunneld) promiseChannelClose(ch *Channel) {
 		// 客户端先关闭，服务端无条件关闭，比较容易
 		ch.addCloseReason("client_close")
 		info.Println("force close...", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
+		ch.server_socket_close = true // ch.conn真正关闭可能有延时，造成此处重复处理。提前设置关闭标识。
 		ch.conn.Close()
 		appevt.Trigger("closereason", ch.closeReason())
 	} else if ch.server_socket_close == true && ch.client_socket_close == true {
@@ -392,7 +393,7 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 	if pkt == nil {
 		info.Println("maybe not command, just normal message")
 	} else {
-		if pkt.command == CMDCONNACK {
+		if pkt.command == CMDCONNSYN {
 			ch := NewChannelWithId(pkt.chidcli)
 			ch.conv = this.makeKcpConv(friendId, pkt)
 			ch.ip = pkt.remoteip
@@ -405,9 +406,9 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				ch.kcp.NoDelay(1, 10, 2, 1)
 			}
 			this.chpool.putServer(ch)
-			info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
+			info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 
-			repkt := ch.makeConnectFINPacket()
+			repkt := ch.makeConnectACKPacket()
 			r, err := this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
 			if err != nil {
 				debug.Println(err, r)
@@ -418,18 +419,15 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			appevt.Trigger("connact", 1)
 			// can connect backend now，不能阻塞，开新的goroutine
 			go this.pollServerReadyRead(ch)
-		} else if pkt.command == CMDCLOSEACK {
+		} else if pkt.command == CMDCLOSEFIN {
 			if ch, ok := this.chpool.pool2[pkt.conv]; ok {
+				info.Println("recv client close fin,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 				ch.client_socket_close = true
 				this.promiseChannelClose(ch)
 			} else {
-				info.Println("recv client close ack, but maybe server already closed",
-					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
+				info.Println("recv client close fin, but maybe server already closed",
+					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv, pkt.msgid)
 			}
-		} else if pkt.command == CMDCLOSEFIN1 {
-			ch := this.chpool.pool2[pkt.conv]
-			ch.client_socket_close = true
-			this.promiseChannelClose(ch)
 		} else {
 			errl.Println("wtf, unknown cmmand:", pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
 		}
