@@ -53,6 +53,7 @@ install:
 script:
   - pwd
   - go get -u github.com/kitech/go-toxcore
+  - go get -u github.com/kitech/goplusplus
   - go get -u github.com/cyfdecyf/color
   - go get -u github.com/bitly/go-simplejson
   - go get -u github.com/GianlucaGuarini/go-observable
