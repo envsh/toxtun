@@ -1,9 +1,9 @@
 language: go
 
 go:
-#  - "1.4"
+  - "1.4"
   - "1.5"
-#  - "1.6"
+  - "1.6"
 
 compiler:
   - gcc
@@ -58,14 +58,10 @@ script:
   - go get -u github.com/bitly/go-simplejson
   - go get -u github.com/GianlucaGuarini/go-observable
   - go get -u github.com/go-ini/ini
-  - ls -lR ../../../pkg/
   - ln -sv $PWD/../go-toxcore ../../../tox
   - ln -sv $PWD/../goplusplus ../../../gopp
   - go build -v -x .
-  # - go install -v -x github.com/kitech/go-toxcore
-  # - ln -sv $PWD ../../../tox
-  # - ls ../../../tox
-  # - go build -v -x examples/toxecho.go
+
 
 notifications:
   email: false
