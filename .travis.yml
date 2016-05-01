@@ -1,0 +1,69 @@
+language: go
+
+go:
+#  - "1.4"
+  - "1.5"
+#  - "1.6"
+
+compiler:
+  - gcc
+  - clang
+
+install:
+  - sudo apt-get update
+  # installing libsodium, needed for toxcore
+  - git clone https://github.com/jedisct1/libsodium.git
+  - cd libsodium
+  - git checkout tags/1.0.3
+  - ./autogen.sh
+  - ./configure --prefix=/usr
+  - make -j3 > /dev/null
+  - sudo make install > /dev/null
+  - cd ..
+  # installing libopus, needed for audio encoding/decoding
+  - wget http://downloads.xiph.org/releases/opus/opus-1.1.tar.gz > /dev/null
+  - tar xzf opus-1.1.tar.gz > /dev/null
+  - cd opus-1.1
+  - ./configure
+  - make -j3 > /dev/null
+  - sudo make install > /dev/null
+  - cd ..
+  # installing vpx
+  - sudo apt-get install yasm
+  - git clone https://chromium.googlesource.com/webm/libvpx > /dev/null
+  - cd libvpx
+  - ./configure --enable-shared > /dev/null
+  - make -j3 >/dev/null
+  - sudo make install > /dev/null
+  - cd ..
+  # creating librarys' links and updating cache
+  - sudo ldconfig
+  - git clone https://github.com/irungentoo/toxcore.git toxcore
+  - cd toxcore
+  - autoreconf -i
+  - ./configure --prefix=/usr --disable-tests --disable-ntox
+  - make -j2
+  - sudo make install
+  - cd ..
+  - sudo ldconfig > /dev/null
+  - apt-cache search tox
+  - apt-cache search opus
+  - apt-cache search libvpx
+
+script:
+  - pwd
+  - go get github.com/kitech/go-toxcore
+  - go build -v -x .
+  # - go install -v -x github.com/kitech/go-toxcore
+  # - ln -sv $PWD ../../../tox
+  # - ls ../../../tox
+  # - go build -v -x examples/toxecho.go
+
+notifications:
+  email: false
+
+#  irc:
+#    channels:
+#      - "chat.freenode.net#tox-dev"
+#    on_success: always
+#    on_failure: always
