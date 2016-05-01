@@ -3,7 +3,7 @@ language: go
 go:
 #  - "1.4"
   - "1.5"
-#  - "1.6"
+  - "1.6"
 
 compiler:
   - gcc
@@ -52,12 +52,16 @@ install:
 
 script:
   - pwd
-  - go get github.com/kitech/go-toxcore
+  - go get -u github.com/kitech/go-toxcore
+  - go get -u github.com/kitech/goplusplus
+  - go get -u github.com/cyfdecyf/color
+  - go get -u github.com/bitly/go-simplejson
+  - go get -u github.com/GianlucaGuarini/go-observable
+  - go get -u github.com/go-ini/ini
+  - ln -sv $PWD/../go-toxcore ../../../tox
+  - ln -sv $PWD/../goplusplus ../../../gopp
   - go build -v -x .
-  # - go install -v -x github.com/kitech/go-toxcore
-  # - ln -sv $PWD ../../../tox
-  # - ls ../../../tox
-  # - go build -v -x examples/toxecho.go
+
 
 notifications:
   email: false
