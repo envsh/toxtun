@@ -59,6 +59,8 @@ script:
   - go get -u github.com/GianlucaGuarini/go-observable
   - go get -u github.com/go-ini/ini
   - ls -lR ../../../pkg/
+  - ln -sv $PWD/../go-toxcore ../../../tox
+  - ln -sv $PWD/../goplusplus ../../../gopp
   - go build -v -x .
   # - go install -v -x github.com/kitech/go-toxcore
   # - ln -sv $PWD ../../../tox
