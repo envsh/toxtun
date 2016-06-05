@@ -97,7 +97,7 @@ KCP+tox(lossy packet)默认配置：100K+/s
 
 测试情况说明，youtube视频连续播放测试1天，传输视频数据3G。
 
-[详细统计数据](docs/stats.txt)
+[详细统计数据](docs/stats.md)
 
 
 ### 线程模型

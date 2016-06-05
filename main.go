@@ -14,6 +14,7 @@ const (
 
 var (
 	// options
+	inst_mode   string // = "server" | "client"
 	kcp_mode    string // = "default" // fast
 	config_file string // = "toxtun_whtun.ini"
 	config      *TunnelConfig
@@ -38,15 +39,14 @@ func main() {
 	argv := flag.Args()
 	argc := len(argv)
 
-	mode := ""
 	if argc > 0 {
-		mode = argv[argc-1]
+		inst_mode = argv[argc-1]
 	}
 
 	go NewStatServer().serve()
-	appevt.Trigger("appmode", mode)
+	appevt.Trigger("appmode", inst_mode)
 
-	switch mode {
+	switch inst_mode {
 	case "client":
 		if config == nil {
 			flag.PrintDefaults()
@@ -58,7 +58,7 @@ func main() {
 		td := NewTunneld()
 		td.serve()
 	default:
-		log.Println("Invalid mode")
+		log.Println("Invalid mode:", inst_mode, ", server/client.")
 		flag.PrintDefaults()
 	}
 
