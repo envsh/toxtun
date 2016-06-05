@@ -84,7 +84,7 @@ func (this *Tunnelc) serve() {
 	}()
 	go func() {
 		for {
-			time.Sleep(30 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 			this.kcpPollChan <- KcpPollEvent{}
 			// this.serveKcp()
 		}

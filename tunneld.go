@@ -9,6 +9,9 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"net"
+	"os"
+	"os/signal"
+	"runtime/pprof"
 
 	"time"
 
@@ -67,6 +70,23 @@ func (this *Tunneld) serve() {
 	this.serverReadyReadChan = make(chan ServerReadyReadEvent, mpcsz)
 	this.serverCloseChan = make(chan ServerCloseEvent, mpcsz)
 
+	// pprof
+	f, err := os.Create("d.prof")
+	if err != nil {
+		info.Println(err)
+	}
+	pprof.StartCPUProfile(f)
+
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, os.Interrupt)
+
+	go func() {
+		s := <-sigc
+		info.Println("Got signal:", s, tox.GetPProfItval())
+		pprof.StopCPUProfile()
+		os.Exit(0)
+	}()
+
 	// install pollers
 	go func() {
 		for {
@@ -79,7 +99,7 @@ func (this *Tunneld) serve() {
 			if this.kcpNextUpdateWait > 0 {
 				time.Sleep(time.Duration(this.kcpNextUpdateWait) * time.Millisecond)
 			} else {
-				time.Sleep(30 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond)
 			}
 			this.kcpPollChan <- KcpPollEvent{}
 		}

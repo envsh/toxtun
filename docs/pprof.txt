@@ -1,0 +1,39 @@
+[gzleo@oarchbox1 toxtun-go]$ go tool pprof ./toxtun-go d.prof 
+Entering interactive mode (type "help" for commands)
+(pprof) top 30
+8.89s of 9.76s total (91.09%)
+Dropped 143 nodes (cum <= 0.05s)
+Showing top 30 nodes out of 81 (cum >= 0.34s)
+      flat  flat%   sum%        cum   cum%
+     7.46s 76.43% 76.43%      7.53s 77.15%  runtime.cgocall
+     0.48s  4.92% 81.35%      0.48s  4.92%  runtime.futex
+     0.23s  2.36% 83.71%      0.25s  2.56%  encoding/json.(*encodeState).string
+     0.13s  1.33% 85.04%      0.13s  1.33%  runtime.usleep
+     0.11s  1.13% 86.17%      0.11s  1.13%  encoding/base64.(*Encoding).Encode
+     0.09s  0.92% 87.09%      0.29s  2.97%  runtime.mallocgc
+     0.05s  0.51% 87.60%      0.06s  0.61%  runtime.greyobject
+     0.05s  0.51% 88.11%      0.12s  1.23%  runtime.scanobject
+     0.04s  0.41% 88.52%      0.10s  1.02%  runtime.makeslice
+     0.04s  0.41% 88.93%      0.28s  2.87%  runtime.sysmon
+     0.03s  0.31% 89.24%      0.88s  9.02%  main.(*KCP).flush
+     0.03s  0.31% 89.55%      0.16s  1.64%  runtime.newobject
+     0.03s  0.31% 89.86%      0.26s  2.66%  runtime.notetsleep_internal
+     0.02s   0.2% 90.06%      0.14s  1.43%  main.(*Tunneld).pollServerReadyRead
+     0.01s   0.1% 90.16%      0.07s  0.72%  encoding/hex.DecodeString
+     0.01s   0.1% 90.27%      0.36s  3.69%  encoding/json.(*encodeState).reflectValue
+     0.01s   0.1% 90.37%      0.37s  3.79%  encoding/json.Marshal
+     0.01s   0.1% 90.47%      0.06s  0.61%  main.(*KCP).Send
+     0.01s   0.1% 90.57%      0.84s  8.61%  main.(*Tunneld).onKcpOutput
+     0.01s   0.1% 90.68%      0.12s  1.23%  runtime.findrunnable
+     0.01s   0.1% 90.78%      0.13s  1.33%  runtime.schedule
+     0.01s   0.1% 90.88%      0.40s  4.10%  runtime.timerproc
+     0.01s   0.1% 90.98%      0.09s  0.92%  time.Time.AppendFormat
+     0.01s   0.1% 91.09%      0.53s  5.43%  tox._Cfunc_tox_friend_send_lossy_packet
+         0     0% 91.09%      0.13s  1.33%  encoding/base64.(*Encoding).EncodeToString
+         0     0% 91.09%      0.36s  3.69%  encoding/json.(*encodeState).marshal
+         0     0% 91.09%      0.34s  3.48%  encoding/json.(*mapEncoder).(encoding/json.encode)-fm
+         0     0% 91.09%      0.34s  3.48%  encoding/json.(*mapEncoder).encode
+         0     0% 91.09%      0.34s  3.48%  encoding/json.(*ptrEncoder).(encoding/json.encode)-fm
+         0     0% 91.09%      0.34s  3.48%  encoding/json.(*ptrEncoder).encode
+(pprof)
+

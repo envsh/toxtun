@@ -93,7 +93,7 @@
 
 KCP+tox(lossy packet)默认配置：100K+/s
 
-开启KCP NoDelay模式后：260K/s
+开启KCP NoDelay模式后：760K/s (调整kcp update interval)
 
 测试情况说明，youtube视频连续播放测试1天，传输视频数据3G。
 
