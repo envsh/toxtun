@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	// "time"
+	"time"
 	"tox"
 )
 
@@ -11,6 +11,8 @@ var server = []interface{}{
 	"114.215.156.251", uint16(33445), "4575D94B71E432331BEB8CF5638CD78AD8385EACE76046AD35C440EF51C0D046",
 	"205.185.116.116", uint16(33445), "A179B09749AC826FF01F37A9613F6B57118AE014D4196A0E1105A98F93A54702",
 	"121.42.190.32", uint16(33445), "0246E8E1DDF5FFCA357E55C6BEA11490E5BFF274D4861DE51E33EA604EFAAA36",
+	"biribiri.org", uint16(33445), "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67",
+	"zawertun.net", uint16(33445), "5521952892FBD5C185DF7180DB4DEF69D7844DEEE79B1F75A634ED9DF656756E",
 	// "127.0.0.1", uint16(33445), "398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52",
 }
 
@@ -34,17 +36,21 @@ func makeTox(name string) *tox.Tox {
 	port := 33445
 	var t *tox.Tox
 	for i := 0; i < 7; i++ {
-		opt.Tcp_port = uint16(port + i)
-		opt.Tcp_port = 0
+		opt.Tcp_port = uint16(port)
+		// opt.Tcp_port = 0
 		t = tox.NewTox(opt)
 		if t != nil {
 			break
 		}
+		port += 1
 	}
 	if t == nil {
 		panic(nil)
 	}
 	info.Println("TCP port:", opt.Tcp_port)
+	if false {
+		time.Sleep(1 * time.Hour)
+	}
 
 	for i := 0; i < len(server)/3; i++ {
 		r := i * 3

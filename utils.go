@@ -4,6 +4,6 @@ import (
 	"time"
 )
 
-func iclock() int32 {
-	return int32((time.Now().UnixNano() / 1000000) & 0xffffffff)
+func iclock() uint32 {
+	return uint32((time.Now().UnixNano() / 1000000) & 0xffffffff)
 }

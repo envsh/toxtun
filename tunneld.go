@@ -79,7 +79,7 @@ func (this *Tunneld) serve() {
 			if this.kcpNextUpdateWait > 0 {
 				time.Sleep(time.Duration(this.kcpNextUpdateWait) * time.Millisecond)
 			} else {
-				time.Sleep(30 * time.Millisecond)
+				time.Sleep(20 * time.Millisecond)
 			}
 			this.kcpPollChan <- KcpPollEvent{}
 		}
@@ -128,26 +128,31 @@ func (this *Tunneld) serve() {
 }
 
 ///////////
+// TODO 计算kcpNextUpdateWait的逻辑优化
+func kcp_poll(pool map[int]*Channel) (chks []*Channel, nxtss []uint32) {
+	for _, ch := range pool {
+		if ch.kcp == nil {
+			continue
+		}
+		curts := uint32(iclock())
+		rts := ch.kcp.Check(curts)
+		if rts == curts {
+			nxtss = append(nxtss, 10)
+			chks = append(chks, ch)
+		} else {
+			nxtss = append(nxtss, rts-curts)
+		}
+	}
+
+	return
+}
+
 func (this *Tunneld) serveKcp() {
 	zbuf := make([]byte, 0)
-	nxts := make([]uint32, 0)
-	chks := make(map[*Channel]bool, 0)
 	if true {
-		for _, ch := range this.chpool.pool {
-			if ch.kcp == nil {
-				continue
-			}
-			curts := uint32(iclock())
-			rts := ch.kcp.Check(curts)
-			if rts == curts {
-				nxts = append(nxts, 10)
-				chks[ch] = true
-			} else {
-				nxts = append(nxts, rts-curts)
-			}
-		}
+		chks, nxtss := kcp_poll(this.chpool.pool)
 
-		mints := gopp.MinU32(nxts)
+		mints := gopp.MinU32(nxtss)
 		if mints > 10 && mints != math.MaxUint32 {
 			this.kcpNextUpdateWait = int(mints)
 			return
@@ -155,11 +160,8 @@ func (this *Tunneld) serveKcp() {
 			this.kcpNextUpdateWait = 10
 		}
 
-		for _, ch := range this.chpool.pool {
+		for _, ch := range chks {
 			if ch.kcp == nil {
-				continue
-			}
-			if _, ok := chks[ch]; !ok {
 				continue
 			}
 

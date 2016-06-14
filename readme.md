@@ -62,6 +62,7 @@
 - [x] 关闭连接原因
 - [ ] 活动连接读写超时
 - [ ] 应该还能再加快传输速度
+- [ ] kcp的三种模式
 
 
 ### 创建连接流程
@@ -93,7 +94,7 @@
 
 KCP+tox(lossy packet)默认配置：100K+/s
 
-开启KCP NoDelay模式后：260K/s
+开启KCP NoDelay模式后：560K/s (调整kcp update interval)
 
 测试情况说明，youtube视频连续播放测试1天，传输视频数据3G。
 
