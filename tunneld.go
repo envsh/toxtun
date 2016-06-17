@@ -251,18 +251,20 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 }
 
 func (this *Tunneld) pollServerReadyRead(ch *Channel) {
+	// TODO 使用内存池
+	rbuf := make([]byte, rdbufsz)
+
 	// Dial
 	conn, err := net.Dial("tcp", net.JoinHostPort(ch.ip, ch.port))
 	if err != nil {
 		errl.Println(err, ch.chidcli, ch.chidsrv, ch.conv)
+		goto pollend
 	}
 	ch.conn = conn
 	info.Println("connected to:", conn.RemoteAddr().String(), ch.chidcli, ch.chidsrv, ch.conv)
 
 	debug.Println("copying server to client:", ch.chidsrv, ch.chidsrv, ch.conv)
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
-	// TODO 使用内存池
-	rbuf := make([]byte, rdbufsz)
 	for {
 		n, err := ch.conn.Read(rbuf)
 		if err != nil {
@@ -284,6 +286,7 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 	}
 
 	// 连接结束
+pollend:
 	debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
 	ch.server_socket_close = true
 	this.serverCloseChan <- ServerCloseEvent{ch}
