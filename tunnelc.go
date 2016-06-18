@@ -168,20 +168,27 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 	} else {
 		go func() {
 			time.Sleep(15 * time.Second)
-			this.clientCheckACKChan <- ClientCheckACKEvent{ch}
+			if _, ok := this.chpool.pool[ch.chidcli]; ok {
+				this.clientCheckACKChan <- ClientCheckACKEvent{ch}
+			}
 		}()
 	}
 }
 
 func (this *Tunnelc) clientCheckACKRecved(ch *Channel) {
-	if !ch.conn_ack_recved {
+
+	if _, ok := this.chpool.pool[ch.chidcli]; ok && !ch.conn_ack_recved {
 		info.Println("wait connection ack timeout", time.Now().Sub(ch.conn_begin_time))
-		this.chpool.rmClient(ch)
-		ch.conn.Close()
-		appevt.Trigger("connerr")
-		ch.addCloseReason("connect_timeout")
-		appevt.Trigger("closereason", ch.closeReason())
+		this.connectFailedClean(ch)
 	}
+}
+
+func (this *Tunnelc) connectFailedClean(ch *Channel) {
+	this.chpool.rmClient(ch)
+	ch.conn.Close()
+	appevt.Trigger("connerr")
+	ch.addCloseReason("connect_timeout")
+	appevt.Trigger("closereason", ch.closeReason())
 }
 
 //////////
@@ -397,6 +404,10 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			if ch, ok := this.chpool.pool2[pkt.conv]; ok {
 				ch.server_socket_close = true
 				this.promiseChannelClose(ch)
+			} else if ch, ok := this.chpool.pool[pkt.chidcli]; ok {
+				info.Println("maybe server connection failed",
+					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
+				this.connectFailedClean(ch)
 			} else {
 				info.Println("recv server close, but maybe client already closed",
 					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)

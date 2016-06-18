@@ -223,6 +223,11 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 }
 
 func (this *Tunneld) processKcpReadyRead(ch *Channel) {
+	if ch.conn == nil {
+		errl.Println("Not Connected:", ch.chidsrv, ch.chidcli)
+		// return
+	}
+
 	buf := make([]byte, ch.kcp.PeekSize())
 	n := ch.kcp.Recv(buf)
 
@@ -250,18 +255,41 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	}
 }
 
-func (this *Tunneld) pollServerReadyRead(ch *Channel) {
-	// TODO 使用内存池
-	rbuf := make([]byte, rdbufsz)
+// should block
+func (this *Tunneld) connectToBackend(ch *Channel) {
+	this.chpool.putServer(ch)
 
 	// Dial
 	conn, err := net.Dial("tcp", net.JoinHostPort(ch.ip, ch.port))
 	if err != nil {
 		errl.Println(err, ch.chidcli, ch.chidsrv, ch.conv)
-		goto pollend
+		// 连接结束
+		debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
+		ch.server_socket_close = true
+		this.serverCloseChan <- ServerCloseEvent{ch}
+		appevt.Trigger("connact", -1)
+		return
 	}
 	ch.conn = conn
 	info.Println("connected to:", conn.RemoteAddr().String(), ch.chidcli, ch.chidsrv, ch.conv)
+	// info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
+
+	repkt := ch.makeConnectACKPacket()
+	r, err := this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
+	if err != nil {
+		debug.Println(err, r)
+	}
+
+	appevt.Trigger("newconn")
+	appevt.Trigger("connok")
+	appevt.Trigger("connact", 1)
+	// can connect backend now，不能阻塞，开新的goroutine
+	this.pollServerReadyRead(ch)
+}
+
+func (this *Tunneld) pollServerReadyRead(ch *Channel) {
+	// TODO 使用内存池
+	rbuf := make([]byte, rdbufsz)
 
 	debug.Println("copying server to client:", ch.chidsrv, ch.chidsrv, ch.conv)
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
@@ -286,7 +314,6 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 	}
 
 	// 连接结束
-pollend:
 	debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
 	ch.server_socket_close = true
 	this.serverCloseChan <- ServerCloseEvent{ch}
@@ -410,20 +437,9 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				ch.kcp.WndSize(128, 128)
 				ch.kcp.NoDelay(1, 10, 2, 1)
 			}
-			this.chpool.putServer(ch)
-			info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 
-			repkt := ch.makeConnectACKPacket()
-			r, err := this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
-			if err != nil {
-				debug.Println(err, r)
-			}
+			go this.connectToBackend(ch)
 
-			appevt.Trigger("newconn")
-			appevt.Trigger("connok")
-			appevt.Trigger("connact", 1)
-			// can connect backend now，不能阻塞，开新的goroutine
-			go this.pollServerReadyRead(ch)
 		} else if pkt.command == CMDCLOSEFIN {
 			if ch, ok := this.chpool.pool2[pkt.conv]; ok {
 				info.Println("recv client close fin,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
