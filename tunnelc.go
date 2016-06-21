@@ -145,10 +145,9 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 	ch.port = fmt.Sprintf("%d", config.recs[0].rport)
 	this.chpool.putClient(ch)
 
-	// toxid := toxtunid
-	toxid := config.recs[0].rpubkey
+	toxtunid := config.recs[0].rpubkey
 	pkt := ch.makeConnectSYNPacket()
-	_, err := this.FriendSendMessage(toxid, string(pkt.toJson()))
+	_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
 
 	if err != nil {
 		// 连接失败
@@ -240,6 +239,7 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 	if _, ok := extra.(*Channel); !ok {
 	}
 
+	toxtunid := config.recs[0].rpubkey
 	msg := string([]byte{254}) + string(buf[:size])
 	err := this.FriendSendLossyPacket(toxtunid, msg)
 	// msg := string([]byte{191}) + string(buf[:size])
@@ -283,6 +283,7 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 
 func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 	info.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv)
+	toxtunid := config.recs[0].rpubkey
 	if ch.client_socket_close == true && ch.server_socket_close == false {
 		pkt := ch.makeCloseFINPacket()
 		_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
@@ -340,6 +341,7 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 
 //////////////
 func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status uint32, extra interface{}) {
+	toxtunid := config.recs[0].rpubkey
 	_, err := t.FriendByPublicKey(toxtunid)
 	if err != nil {
 		t.FriendAdd(toxtunid, "tuncli")
