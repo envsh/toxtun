@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -71,7 +72,8 @@ type Channel struct {
 	conn_try_times  int
 	conn_ack_recved bool
 
-	close_reason []string
+	close_reasons []string
+	close_stacks  [][]uintptr
 }
 
 func NewChannelClient(conn net.Conn) *Channel {
@@ -79,7 +81,8 @@ func NewChannelClient(conn net.Conn) *Channel {
 	ch.chidcli = nextChanid()
 	ch.conn = conn
 	ch.conn_begin_time = time.Now()
-	ch.close_reason = make([]string, 0)
+	ch.close_reasons = make([]string, 0)
+	ch.close_stacks = make([][]uintptr, 0)
 
 	return ch
 }
@@ -133,22 +136,22 @@ func (this *Channel) makeCloseACKPacket() *Packet {
 */
 
 func (this *Channel) addCloseReason(reason string) {
-	for i := 0; i < len(this.close_reason); i++ {
-		if reason == this.close_reason[i] {
+	for i := 0; i < len(this.close_reasons); i++ {
+		if reason == this.close_reasons[i] {
 			info.Println("reason already exists, maybe loop,", reason, this.closeReason())
 			break
 		}
 	}
 
-	this.close_reason = append(this.close_reason, reason)
-	if len(this.close_reason) > 5 {
+	this.close_reasons = append(this.close_reasons, reason)
+	if len(this.close_reasons) > 5 {
 		info.Println(this.chidcli, this.chidsrv, this.conv)
 		panic("wtf")
 	}
 }
 
 func (this *Channel) closeReason() string {
-	return strings.Join(this.close_reason, ",")
+	return strings.Join(this.close_reasons, ",")
 }
 
 ///////////
@@ -186,15 +189,35 @@ func (this *ChannelPool) putServer(ch *Channel) {
 	appevt.Trigger("chanact", 1, len(this.pool), len(this.pool2))
 }
 
+func dumpStacks(pcs []uintptr) {
+	for idx, pc := range pcs {
+		fn := runtime.FuncForPC(pc)
+		file, line := fn.FileLine(pc)
+		info.Println(idx, fn.Name(), file, line)
+	}
+}
+
 func (this *ChannelPool) rmClient(ch *Channel) {
 	if _, ok := this.pool[ch.chidcli]; !ok {
+		errl.Println("maybe already removed.", ch.chidsrv, ch.chidsrv, ch.conv)
+		dumpStacks(ch.close_stacks[len(ch.close_stacks)-1])
+		info.Println("=======")
+		pcs := make([]uintptr, 16)
+		pcn := runtime.Callers(1, pcs)
+		dumpStacks(pcs[0:pcn])
 		panic(ch.chidcli)
+	} else {
+		pcs := make([]uintptr, 16)
+		pcn := runtime.Callers(1, pcs)
+		ch.close_stacks = append(ch.close_stacks, pcs[0:pcn])
+		delete(this.pool, ch.chidcli)
 	}
-	delete(this.pool, ch.chidcli)
+
 	if _, ok := this.pool2[ch.conv]; !ok {
 		// panic(ch.conv)
+	} else {
+		delete(this.pool2, ch.conv)
 	}
-	delete(this.pool2, ch.conv)
 	appevt.Trigger("chanact", -1, len(this.pool), len(this.pool2))
 }
 
