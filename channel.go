@@ -74,6 +74,7 @@ type Channel struct {
 
 	close_reasons []string
 	close_stacks  [][]uintptr
+	rmctimes      int
 }
 
 func NewChannelClient(conn net.Conn) *Channel {
@@ -198,6 +199,9 @@ func dumpStacks(pcs []uintptr) {
 }
 
 func (this *ChannelPool) rmClient(ch *Channel) {
+	ch.rmctimes += 1
+	haserr := false
+
 	if _, ok := this.pool[ch.chidcli]; !ok {
 		errl.Println("maybe already removed.", ch.chidsrv, ch.chidsrv, ch.conv)
 		dumpStacks(ch.close_stacks[len(ch.close_stacks)-1])
@@ -217,6 +221,17 @@ func (this *ChannelPool) rmClient(ch *Channel) {
 		// panic(ch.conv)
 	} else {
 		delete(this.pool2, ch.conv)
+	}
+
+	if haserr {
+		if ch.rmctimes > 2 {
+			// go func() {
+			errl.Println("errinfo:", ch.rmctimes, len(this.pool), len(this.pool2))
+			panic(ch.chidcli)
+			// }()
+		} else {
+			errl.Println("errinfo:", ch.rmctimes, len(this.pool), len(this.pool2))
+		}
 	}
 	appevt.Trigger("chanact", -1, len(this.pool), len(this.pool2))
 }

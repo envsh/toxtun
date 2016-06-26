@@ -409,7 +409,8 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			} else if ch, ok := this.chpool.pool[pkt.chidcli]; ok {
 				info.Println("maybe server connection failed",
 					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
-				this.connectFailedClean(ch)
+				// this.connectFailedClean(ch)
+				this.promiseChannelClose(ch)
 			} else {
 				info.Println("recv server close, but maybe client already closed",
 					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
