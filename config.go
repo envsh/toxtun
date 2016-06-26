@@ -69,3 +69,13 @@ func parseRecordLine(line string) TunnelRecord {
 		lhost, lport, rhost, rport, rpubkey,
 	}
 }
+
+func friendInConfig(pubkey string) bool {
+	for _, rec := range config.recs {
+		if pubkey == rec.rpubkey || strings.HasPrefix(rec.rpubkey, pubkey) {
+			return true
+		}
+	}
+
+	return false
+}

@@ -347,7 +347,11 @@ func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status uint32, ext
 		t.FriendAdd(toxtunid, "tuncli")
 		t.WriteSavedata(fname)
 	}
-	info.Println(status)
+	info.Println("mytox status:", status)
+	if status == 0 {
+		switchServer(t)
+	}
+
 	if status == 0 {
 		appevt.Trigger("selfonline", false)
 		appevt.Trigger("selfoffline")
@@ -362,7 +366,13 @@ func (this *Tunnelc) onToxnetFriendRequest(t *tox.Tox, friendId string, message 
 
 func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status uint32, userData interface{}) {
 	fid, _ := this.tox.FriendGetPublicKey(friendNumber)
-	info.Println(friendNumber, status, fid)
+	info.Println("peer status (fn/st/id):", friendNumber, status, fid)
+	if status == 0 {
+		if friendInConfig(fid) {
+			switchServer(t)
+		}
+	}
+
 	if status == 0 {
 		appevt.Trigger("peeronline", false)
 		appevt.Trigger("peeroffline")

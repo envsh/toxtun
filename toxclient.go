@@ -2,12 +2,16 @@ package main
 
 import (
 	"fmt"
+	"github.com/bitly/go-simplejson"
 	"io/ioutil"
+	"log"
+	"math/rand"
+	"sort"
 	"time"
 	"tox"
 )
 
-var server = []interface{}{
+var servers = []interface{}{
 	"114.215.156.251", uint16(33445), "4575D94B71E432331BEB8CF5638CD78AD8385EACE76046AD35C440EF51C0D046",
 	"205.185.116.116", uint16(33445), "A179B09749AC826FF01F37A9613F6B57118AE014D4196A0E1105A98F93A54702",
 	"121.42.190.32", uint16(33445), "0246E8E1DDF5FFCA357E55C6BEA11490E5BFF274D4861DE51E33EA604EFAAA36",
@@ -52,10 +56,10 @@ func makeTox(name string) *tox.Tox {
 		time.Sleep(1 * time.Hour)
 	}
 
-	for i := 0; i < len(server)/3; i++ {
+	for i := 0; i < len(servers)/3; i++ {
 		r := i * 3
-		r1, err := t.Bootstrap(server[r+0].(string), server[r+1].(uint16), server[r+2].(string))
-		r2, err := t.AddTcpRelay(server[r+0].(string), server[r+1].(uint16), server[r+2].(string))
+		r1, err := t.Bootstrap(servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string))
+		r2, err := t.AddTcpRelay(servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string))
 		info.Println("bootstrap:", r1, err, r2, i, r)
 	}
 
@@ -131,3 +135,139 @@ func iterate(t *tox.Tox) {
 
 	// t.Kill()
 }
+
+// 切换到其他的bootstrap nodes上
+func switchServer(t *tox.Tox) {
+	newNodes := get3nodes()
+	for _, node := range newNodes {
+		r1, err := t.Bootstrap(node.ipaddr, node.port, node.pubkey)
+		r2, err := t.AddTcpRelay(node.ipaddr, node.port, node.pubkey)
+		info.Println("bootstrap:", r1, err, r2, node.ipaddr)
+	}
+	currNodes = newNodes
+}
+
+func get3nodes() (nodes [3]ToxNode) {
+	idxes := make(map[int]bool, 0)
+	currips := make(map[string]bool, 0)
+	for idx := 0; idx < len(currNodes); idx++ {
+		currips[currNodes[idx].ipaddr] = true
+	}
+	for {
+		idx := rand.Int() % len(allNodes)
+		_, ok1 := idxes[idx]
+		_, ok2 := currips[allNodes[idx].ipaddr]
+		if !ok1 && !ok2 && allNodes[idx].last_ping > 0 {
+			idxes[idx] = true
+			if len(idxes) == 3 {
+				break
+			}
+		}
+	}
+
+	_idx := 0
+	for k, _ := range idxes {
+		nodes[_idx] = allNodes[k]
+		_idx += 1
+	}
+	return
+}
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+	initThirdPartyNodes()
+	initToxNodes()
+	go pingNodes()
+}
+
+// should block
+func pingNodes() {
+	for {
+		time.Sleep(30 * time.Second)
+
+		for idx, node := range allNodes {
+			if false {
+				log.Println(idx, node)
+			}
+		}
+	}
+}
+
+func initThirdPartyNodes() {
+	for idx := 0; idx < 3*3; idx += 3 {
+		node := ToxNode{
+			isthird:   true,
+			ipaddr:    servers[idx].(string),
+			port:      servers[idx+1].(uint16),
+			pubkey:    servers[idx+2].(string),
+			last_ping: uint(time.Now().Unix()),
+		}
+
+		allNodes = append(allNodes, node)
+	}
+}
+
+func initToxNodes() {
+	bcc, err := Asset("toxnodes.json")
+	if err != nil {
+		log.Panicln(err)
+	}
+	jso, err := simplejson.NewJson(bcc)
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	nodes := jso.Get("nodes").MustArray()
+	for idx := 0; idx < len(nodes); idx++ {
+		nodej := jso.Get("nodes").GetIndex(idx)
+		/*
+			log.Println(idx, nodej.Get("ipv4"), nodej.Get("port"), nodej.Get("last_ping"),
+				len(nodej.Get("tcp_ports").MustArray()))
+		*/
+		node := ToxNode{
+			ipaddr:    nodej.Get("ipv4").MustString(),
+			port:      uint16(nodej.Get("port").MustUint64()),
+			pubkey:    nodej.Get("public_key").MustString(),
+			last_ping: uint(nodej.Get("last_ping").MustUint64()),
+			weight:    calcNodeWeight(nodej),
+		}
+
+		allNodes = append(allNodes, node)
+		if idx < len(currNodes) {
+			currNodes[idx] = node
+		}
+	}
+
+	sort.Sort(ByRand(allNodes))
+	for idx, node := range allNodes {
+		if false {
+			log.Println(idx, node.ipaddr, node.port, node.last_ping)
+		}
+	}
+	info.Println("Load nodes:", len(allNodes))
+}
+
+func calcNodeWeight(nodej *simplejson.Json) int {
+	return 0
+}
+
+var allNodes = make([]ToxNode, 0)
+var currNodes [3]ToxNode
+
+type ToxNode struct {
+	isthird   bool
+	ipaddr    string
+	port      uint16
+	pubkey    string
+	weight    int
+	usetimes  int
+	legacy    int
+	chktimes  int
+	last_ping uint
+}
+
+type ByRand []ToxNode
+
+func (this ByRand) Len() int           { return len(this) }
+func (this ByRand) Swap(i, j int)      { this[i], this[j] = this[j], this[i] }
+func (this ByRand) Less(i, j int) bool { return rand.Int()%2 == 0 }
