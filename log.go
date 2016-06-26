@@ -155,6 +155,3 @@ func getFileLine() []interface{} {
 	sfile := file[pos+1:]
 	return []interface{}{sfile + ":" + strconv.Itoa(line) + " " + fn.Name()}
 }
-
-// log folder
-var _lastlog string
