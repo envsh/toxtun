@@ -209,7 +209,7 @@ func (this *ChannelPool) rmClient(ch *Channel) {
 		pcs := make([]uintptr, 16)
 		pcn := runtime.Callers(1, pcs)
 		dumpStacks(pcs[0:pcn])
-		panic(ch.chidcli)
+		// panic(ch.chidcli)
 	} else {
 		pcs := make([]uintptr, 16)
 		pcn := runtime.Callers(1, pcs)
