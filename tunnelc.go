@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	// TODO dynamic
 	server_port = 8113
 )
 
@@ -158,18 +159,22 @@ func (this *Tunnelc) serveUdp() {
 func (this *Tunnelc) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
 	// info.Println(addr, string(buf), size)
 	debug.Println(addr, string(buf), size)
-
 	// kcp包前4字段为conv，little hacky
 	if len(buf) < 4 {
 		errl.Println("wtf")
 	}
+
+	// maybe check ping packet
+
+	// unpack package
 	conv := binary.LittleEndian.Uint32(buf)
 	ch := this.chpool.pool2[conv]
 	if ch == nil {
 		errl.Println("maybe has some problem")
+	} else {
+		n := ch.kcp.Input(buf)
+		debug.Println("udp->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 	}
-	n := ch.kcp.Input(buf)
-	debug.Println("udp->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 }
 
 // 手写loop吧，试试
@@ -468,10 +473,17 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				if err != nil {
 					errl.Println(err, uaddr)
 				}
-				ch.udpPeerAddr = uaddr
+				ch.udp_peer_addr = uaddr
+				uaddr, err = net.ResolveUDPAddr("udp", pkt.data)
+				if err != nil {
+					errl.Println(err)
+				} else {
+					ch.udp_peer_addr = uaddr
+				}
 				// wrn, err := this.udpPeer.WriteTo([]byte("hehehheheh"), uaddr)
 				// info.Println(wrn, err)
-				info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
+
+				info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.data)
 				appevt.Trigger("connok")
 				appevt.Trigger("connact", 1)
 				ch.conn_ack_recved = true

@@ -161,11 +161,14 @@ func (this *Tunneld) serveUdp() {
 func (this *Tunneld) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
 	// info.Println(addr, string(buf), size)
 	debug.Println(addr, string(buf), size)
-
 	// kcp包前4字段为conv，little hacky
 	if len(buf) < 4 {
 		errl.Println("wtf")
 	}
+
+	// maybe check ping packet
+
+	// unpack package
 	conv := binary.LittleEndian.Uint32(buf)
 	ch := this.chpool.pool2[conv]
 	if ch == nil {
@@ -174,8 +177,10 @@ func (this *Tunneld) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
 		n := ch.kcp.Input(buf)
 		debug.Println("udp->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 
-		if ch.udpPeerAddr == nil {
-			ch.udpPeerAddr = addr
+		if ch.udp_peer_addr == nil ||
+			(ch.udp_peer_addr != nil && addr.String() != ch.udp_peer_addr.String()) {
+			info.Printf("maybe nat change for client: %s => %s.\n", ch.udp_peer_addr, addr)
+			ch.udp_peer_addr = addr
 		}
 	}
 }
@@ -275,8 +280,8 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 	}
 
 	// multipath-udp backend
-	if ch.udpPeerAddr != nil {
-		uaddr := ch.udpPeerAddr
+	if ch.udp_peer_addr != nil {
+		uaddr := ch.udp_peer_addr
 		wrn, err := this.udpSrv.WriteTo(buf[:size], uaddr)
 		if err != nil {
 			errl.Println(err, wrn)
@@ -337,6 +342,8 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	// info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 
 	repkt := ch.makeConnectACKPacket()
+	repkt.data = fmt.Sprintf("%s:%d", getOutboundIp(),
+		this.udpSrv.LocalAddr().(*net.UDPAddr).Port)
 	r, err := this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
 	if err != nil {
 		debug.Println(err, r)
