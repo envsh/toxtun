@@ -32,6 +32,10 @@ type Tunnelc struct {
 	clientReadyReadChan chan ClientReadyReadEvent
 	clientCloseChan     chan ClientCloseEvent
 	clientCheckACKChan  chan ClientCheckACKEvent
+	udpReadyReadChan    chan UdpReadyReadEvent
+
+	// multipath-udp
+	udpPeer net.PacketConn
 }
 
 func NewTunnelc() *Tunnelc {
@@ -48,6 +52,20 @@ func NewTunnelc() *Tunnelc {
 	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
 	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
 	t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
+
+	// multipath-udp
+	for i := 0; i < 5; i++ {
+		udpPeer, err := net.ListenPacket("udp", fmt.Sprintf(":%d", 18588+i))
+		if err != nil {
+			errl.Println(err, udpPeer)
+			if i == 4 {
+				panic(err)
+			}
+		} else {
+			this.udpPeer = udpPeer
+			break
+		}
+	}
 
 	//
 	return this
@@ -73,6 +91,7 @@ func (this *Tunnelc) serve() {
 	this.clientReadyReadChan = make(chan ClientReadyReadEvent, mpcsz)
 	this.clientCloseChan = make(chan ClientCloseEvent, mpcsz)
 	this.clientCheckACKChan = make(chan ClientCheckACKEvent, 0)
+	this.udpReadyReadChan = make(chan UdpReadyReadEvent, mpcsz)
 
 	// install pollers
 	go func() {
@@ -90,6 +109,7 @@ func (this *Tunnelc) serve() {
 		}
 	}()
 	go this.serveTcp()
+	go this.serveUdp()
 
 	// like event handler
 	for {
@@ -108,6 +128,8 @@ func (this *Tunnelc) serve() {
 			this.processClientReadyRead(evt.ch, evt.buf, evt.size)
 		case evt := <-this.clientCloseChan:
 			this.promiseChannelClose(evt.ch)
+		case evt := <-this.udpReadyReadChan:
+			this.processUdpReadyRead(evt.addr, evt.buf, evt.size)
 		case <-this.toxPollChan:
 			iterate(this.tox)
 		case <-this.kcpPollChan:
@@ -116,6 +138,24 @@ func (this *Tunnelc) serve() {
 			this.clientCheckACKRecved(evt.ch)
 		}
 	}
+}
+
+//
+func (this *Tunnelc) serveUdp() {
+	info.Println("Listen UDP:", this.udpPeer.LocalAddr().String())
+	buf := make([]byte, 1600)
+	for {
+		n, addr, err := this.udpPeer.ReadFrom(buf)
+		if err != nil {
+			debug.Println(n, addr, err)
+		} else {
+			this.udpReadyReadChan <- UdpReadyReadEvent{addr, buf[0:n], n}
+		}
+	}
+}
+
+func (this *Tunnelc) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
+
 }
 
 // 手写loop吧，试试

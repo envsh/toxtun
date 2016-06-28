@@ -49,3 +49,9 @@ type ClientCheckACKEvent struct {
 	ch *Channel
 }
 type ChannelGCEvent struct{}
+
+type UdpReadyReadEvent struct {
+	addr net.Addr
+	buf  []byte
+	size int
+}

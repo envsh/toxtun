@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"net"
-
 	"time"
 
 	"gopp"
@@ -32,6 +31,10 @@ type Tunneld struct {
 	serverReadyReadChan chan ServerReadyReadEvent
 	serverCloseChan     chan ServerCloseEvent
 	channelGCChan       chan ChannelGCEvent
+	udpReadyReadChan    chan UdpReadyReadEvent
+
+	// multipath-udp
+	udpSrv net.PacketConn
 }
 
 func NewTunneld() *Tunneld {
@@ -48,6 +51,13 @@ func NewTunneld() *Tunneld {
 	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
 	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
 	t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
+
+	// multipath-udp
+	udpSrv, err := net.ListenPacket("udp", ":18588")
+	this.udpSrv = udpSrv
+	if err != nil {
+		panic(err)
+	}
 
 	///
 	return this
@@ -66,6 +76,7 @@ func (this *Tunneld) serve() {
 	this.channelGCChan = make(chan ChannelGCEvent, mpcsz)
 	this.serverReadyReadChan = make(chan ServerReadyReadEvent, mpcsz)
 	this.serverCloseChan = make(chan ServerCloseEvent, mpcsz)
+	this.udpReadyReadChan = make(chan UdpReadyReadEvent, mpcsz)
 
 	// install pollers
 	go func() {
@@ -99,6 +110,8 @@ func (this *Tunneld) serve() {
 		}
 	}()
 
+	go this.serveUdp()
+
 	// like event handler
 	for {
 		select {
@@ -108,6 +121,8 @@ func (this *Tunneld) serve() {
 		//	this.processKcpOutput(evt.buf, evt.size, evt.extra)
 		case evt := <-this.serverReadyReadChan:
 			this.processServerReadyRead(evt.ch, evt.buf, evt.size)
+		case evt := <-this.udpReadyReadChan:
+			this.processUdpReadyRead(evt.addr, evt.buf, evt.size)
 		case evt := <-this.serverCloseChan:
 			this.promiseChannelClose(evt.ch)
 		case <-this.toxPollChan:
@@ -125,6 +140,24 @@ func (this *Tunneld) serve() {
 			this.channelGC()
 		}
 	}
+}
+
+///////////
+func (this *Tunneld) serveUdp() {
+	info.Println("Listen UDP:", this.udpSrv.LocalAddr().String())
+	buf := make([]byte, 1600)
+	for {
+		n, addr, err := this.udpSrv.ReadFrom(buf)
+		if err != nil {
+			debug.Println(n, addr, err)
+		} else {
+			this.udpReadyReadChan <- UdpReadyReadEvent{addr, buf[0:n], n}
+		}
+	}
+}
+
+func (this *Tunneld) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
+
 }
 
 ///////////

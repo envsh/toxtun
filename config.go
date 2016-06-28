@@ -11,6 +11,11 @@ const (
 // toxtunid = "A90BE3636C169E5991C910950E90C7524C83460971F6D710D6AC0591B8A7B62235B0BE180AC5"
 )
 
+var (
+	// from config_manual.go
+	outboundip = outboundip_const
+)
+
 type TunnelRecord struct {
 	lhost   string
 	lport   int
