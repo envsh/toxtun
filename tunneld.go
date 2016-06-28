@@ -145,19 +145,39 @@ func (this *Tunneld) serve() {
 ///////////
 func (this *Tunneld) serveUdp() {
 	info.Println("Listen UDP:", this.udpSrv.LocalAddr().String())
-	buf := make([]byte, 1600)
-	for {
-		n, addr, err := this.udpSrv.ReadFrom(buf)
+
+	stop := false
+	for !stop {
+		buf := make([]byte, 1600)
+		rdn, addr, err := this.udpSrv.ReadFrom(buf)
 		if err != nil {
-			debug.Println(n, addr, err)
+			debug.Println(rdn, addr, err)
 		} else {
-			this.udpReadyReadChan <- UdpReadyReadEvent{addr, buf[0:n], n}
+			this.udpReadyReadChan <- UdpReadyReadEvent{addr, buf[0:rdn], rdn}
 		}
 	}
 }
 
 func (this *Tunneld) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
+	// info.Println(addr, string(buf), size)
+	debug.Println(addr, string(buf), size)
 
+	// kcp包前4字段为conv，little hacky
+	if len(buf) < 4 {
+		errl.Println("wtf")
+	}
+	conv := binary.LittleEndian.Uint32(buf)
+	ch := this.chpool.pool2[conv]
+	if ch == nil {
+		errl.Println("channel not found, maybe has some problem, maybe closed", conv)
+	} else {
+		n := ch.kcp.Input(buf)
+		debug.Println("udp->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+
+		if ch.udpPeerAddr == nil {
+			ch.udpPeerAddr = addr
+		}
+	}
 }
 
 ///////////
@@ -252,6 +272,15 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 		debug.Println(err)
 	} else {
 		debug.Println("kcp->tox:", len(msg), time.Now().String())
+	}
+
+	// multipath-udp backend
+	if ch.udpPeerAddr != nil {
+		uaddr := ch.udpPeerAddr
+		wrn, err := this.udpSrv.WriteTo(buf[:size], uaddr)
+		if err != nil {
+			errl.Println(err, wrn)
+		}
 	}
 }
 
@@ -523,10 +552,13 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 	if buf[0] == 191 {
 		buf = buf[1:]
 		// kcp包前4字段为conv，little hacky
+		if len(buf) < 4 {
+			errl.Println("wtf")
+		}
 		conv := binary.LittleEndian.Uint32(buf)
 		ch := this.chpool.pool2[conv]
 		if ch == nil {
-			info.Println("channel not found, maybe has some problem, maybe already closed", conv)
+			errl.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		} else {
 			n := ch.kcp.Input(buf)
 			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))

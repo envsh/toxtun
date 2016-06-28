@@ -143,8 +143,9 @@ func (this *Tunnelc) serve() {
 //
 func (this *Tunnelc) serveUdp() {
 	info.Println("Listen UDP:", this.udpPeer.LocalAddr().String())
-	buf := make([]byte, 1600)
+
 	for {
+		buf := make([]byte, 1600)
 		n, addr, err := this.udpPeer.ReadFrom(buf)
 		if err != nil {
 			debug.Println(n, addr, err)
@@ -155,7 +156,20 @@ func (this *Tunnelc) serveUdp() {
 }
 
 func (this *Tunnelc) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
+	// info.Println(addr, string(buf), size)
+	debug.Println(addr, string(buf), size)
 
+	// kcp包前4字段为conv，little hacky
+	if len(buf) < 4 {
+		errl.Println("wtf")
+	}
+	conv := binary.LittleEndian.Uint32(buf)
+	ch := this.chpool.pool2[conv]
+	if ch == nil {
+		errl.Println("maybe has some problem")
+	}
+	n := ch.kcp.Input(buf)
+	debug.Println("udp->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 }
 
 // 手写loop吧，试试
@@ -288,6 +302,16 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 		debug.Println(err)
 	} else {
 		debug.Println("kcp->tox:", len(msg))
+	}
+
+	// multipath-udp backend
+	uaddr, err := net.ResolveUDPAddr("udp", outboundip)
+	if err != nil {
+		errl.Println(err, uaddr)
+	}
+	wrn, err := this.udpPeer.WriteTo(buf[:size], uaddr)
+	if err != nil {
+		errl.Println(err, wrn)
 	}
 }
 
@@ -439,6 +463,14 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				}
 				this.chpool.putClientLacks(ch)
 
+				// send ping to udp
+				uaddr, err := net.ResolveUDPAddr("udp", outboundip)
+				if err != nil {
+					errl.Println(err, uaddr)
+				}
+				ch.udpPeerAddr = uaddr
+				// wrn, err := this.udpPeer.WriteTo([]byte("hehehheheh"), uaddr)
+				// info.Println(wrn, err)
 				info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv)
 				appevt.Trigger("connok")
 				appevt.Trigger("connact", 1)
@@ -513,7 +545,7 @@ func (this *Tunnelc) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 		conv = binary.LittleEndian.Uint32(buf)
 		ch := this.chpool.pool2[conv]
 		if ch == nil {
-			info.Println("maybe has some problem")
+			errl.Println("maybe has some problem")
 		}
 		n := ch.kcp.Input(buf)
 		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
