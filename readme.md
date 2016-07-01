@@ -32,7 +32,7 @@
 
 ### 启动服务端
 
-    toxtun -kcp-mode fast server
+    toxtun server
 
 
 ### 启动客户端
@@ -50,7 +50,7 @@
 
 启动客户端：
 
-    toxtun -config toxtun.ini -kcp-mode fast client
+    toxtun -config toxtun.ini client
 
 
 ### TODOs
@@ -58,12 +58,13 @@
 - [x] 统计服务模块
 - [ ] 多tunnel支持
 - [ ] 数据编码：JSON=>MsgPack
-- [ ] toxnet/friend失联重连
+- [x] toxnet/friend失联重连
 - [x] 关闭连接原因
 - [ ] 活动连接读写超时
 - [ ] 应该还能再加快传输速度
 - [ ] kcp的三种模式
 - [ ] UDP协议支持
+- [ ] MultiPath-TCP类似原理支持（多传输通道：tox/UDP/else）
 
 ### 创建连接流程
 
@@ -123,7 +124,7 @@ KCP+tox(lossy packet)默认配置：100K+/s
 
 虽然可以直接用tox的lossless packet，但仍旧要加一层KCP，因为toxnet可能暂时性掉线(offline)。
 
-如果有活动连接和数据包，则要考虑自己处理重发。
+在这种情况下，如果有活动连接和数据包，则要考虑自己处理重发。
 
 
 Contributing

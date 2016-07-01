@@ -168,7 +168,7 @@ func (this *Tunneld) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
 
 	// maybe check ping packet
 
-	// unpack package
+	// unpack kcp package
 	conv := binary.LittleEndian.Uint32(buf)
 	ch := this.chpool.pool2[conv]
 	if ch == nil {

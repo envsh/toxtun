@@ -13,9 +13,10 @@ import (
 	"tox"
 )
 
-const (
-	// TODO dynamic
-	server_port = 8113
+var (
+	// TODO dynamic multiple port mode
+	// tunnel客户端通道监听服务端口
+	tunnelServerPort = 8113
 )
 
 type Tunnelc struct {
@@ -73,7 +74,8 @@ func NewTunnelc() *Tunnelc {
 }
 
 func (this *Tunnelc) serve() {
-	srv, err := net.Listen("tcp", fmt.Sprintf(":%d", server_port))
+	tunnelServerPort = config.recs[0].lport
+	srv, err := net.Listen("tcp", fmt.Sprintf(":%d", tunnelServerPort))
 	if err != nil {
 		info.Println(err)
 		return
@@ -166,11 +168,11 @@ func (this *Tunnelc) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
 
 	// maybe check ping packet
 
-	// unpack package
+	// unpack kcp package
 	conv := binary.LittleEndian.Uint32(buf)
 	ch := this.chpool.pool2[conv]
 	if ch == nil {
-		errl.Println("maybe has some problem")
+		errl.Println("maybe has some problem:", conv)
 	} else {
 		n := ch.kcp.Input(buf)
 		debug.Println("udp->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
