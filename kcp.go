@@ -1,7 +1,10 @@
-// KCP - A Fast and Reliable ARQ Protocol
+// Package kcp - A Fast and Reliable ARQ Protocol
 package main
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"sync/atomic"
+)
 
 const (
 	IKCP_RTO_NDL     = 30  // no delay min rto
@@ -20,14 +23,14 @@ const (
 	IKCP_ACK_FAST    = 3
 	IKCP_INTERVAL    = 100
 	IKCP_OVERHEAD    = 24
-	IKCP_DEADLINK    = 10
+	IKCP_DEADLINK    = 20
 	IKCP_THRESH_INIT = 2
 	IKCP_THRESH_MIN  = 2
 	IKCP_PROBE_INIT  = 7000   // 7 secs to probe window size
 	IKCP_PROBE_LIMIT = 120000 // up to 120 secs to probe window
 )
 
-// In general, Output is a closure which captures conn and calls conn.Write
+// Output is a closure which captures conn and calls conn.Write
 type Output func(buf []byte, size int, extra interface{})
 
 /* encode 8 bits unsigned int */
@@ -90,7 +93,7 @@ func _itimediff(later, earlier uint32) int32 {
 	return (int32)(later - earlier)
 }
 
-// KCP Segment Definition
+// Segment defines a KCP segment
 type Segment struct {
 	conv     uint32
 	cmd      uint32
@@ -119,13 +122,14 @@ func (seg *Segment) encode(ptr []byte) []byte {
 	return ptr
 }
 
+// NewSegment creates a KCP segment
 func NewSegment(size int) *Segment {
 	seg := new(Segment)
 	seg.data = make([]byte, size)
 	return seg
 }
 
-// KCP Connection Definition
+// KCP defines a single KCP connection
 type KCP struct {
 	conv, mtu, mss, state                  uint32
 	snd_una, snd_nxt, rcv_nxt              uint32
@@ -154,7 +158,7 @@ type KCP struct {
 	extra interface{}
 }
 
-// create a new kcp control object, 'conv' must equal in two endpoint
+// NewKCP create a new kcp control object, 'conv' must equal in two endpoint
 // from the same connection.
 func NewKCP(conv uint32, output Output, extra interface{}) *KCP {
 	kcp := new(KCP)
@@ -176,7 +180,7 @@ func NewKCP(conv uint32, output Output, extra interface{}) *KCP {
 	return kcp
 }
 
-// check the size of next message in the recv queue
+// PeekSize checks the size of next message in the recv queue
 func (kcp *KCP) PeekSize() (length int) {
 	if len(kcp.rcv_queue) == 0 {
 		return -1
@@ -201,7 +205,7 @@ func (kcp *KCP) PeekSize() (length int) {
 	return
 }
 
-// user/upper level recv: returns size, returns below zero for EAGAIN
+// Recv is user/upper level recv: returns size, returns below zero for EAGAIN
 func (kcp *KCP) Recv(buffer []byte) (n int) {
 	if len(kcp.rcv_queue) == 0 {
 		return -1
@@ -258,7 +262,7 @@ func (kcp *KCP) Recv(buffer []byte) (n int) {
 	return
 }
 
-// user/upper level send, returns below zero for error
+// Send is user/upper level send, returns below zero for error
 func (kcp *KCP) Send(buffer []byte) int {
 	var count int
 	if len(buffer) == 0 {
@@ -295,6 +299,7 @@ func (kcp *KCP) Send(buffer []byte) int {
 	return 0
 }
 
+// https://tools.ietf.org/html/rfc6298
 func (kcp *KCP) update_ack(rtt int32) {
 	var rto uint32 = 0
 	if kcp.rx_srtt == 0 {
@@ -334,7 +339,23 @@ func (kcp *KCP) parse_ack(sn uint32) {
 		if sn == seg.sn {
 			kcp.snd_buf = append(kcp.snd_buf[:k], kcp.snd_buf[k+1:]...)
 			break
-		} else {
+		}
+		if _itimediff(sn, seg.sn) < 0 {
+			break
+		}
+	}
+}
+
+func (kcp *KCP) parse_fastack(sn uint32) {
+	if _itimediff(sn, kcp.snd_una) < 0 || _itimediff(sn, kcp.snd_nxt) >= 0 {
+		return
+	}
+
+	for k := range kcp.snd_buf {
+		seg := &kcp.snd_buf[k]
+		if _itimediff(sn, seg.sn) < 0 {
+			break
+		} else if sn != seg.sn {
 			seg.fastack++
 		}
 	}
@@ -366,29 +387,33 @@ func (kcp *KCP) parse_data(newseg *Segment) {
 	sn := newseg.sn
 	if _itimediff(sn, kcp.rcv_nxt+kcp.rcv_wnd) >= 0 ||
 		_itimediff(sn, kcp.rcv_nxt) < 0 {
+		atomic.AddUint64(&DefaultSnmp.RepeatSegs, 1)
 		return
 	}
 
 	n := len(kcp.rcv_buf) - 1
-	after_idx := -1
+	insert_idx := 0
 	repeat := false
 	for i := n; i >= 0; i-- {
 		seg := &kcp.rcv_buf[i]
 		if seg.sn == sn {
 			repeat = true
+			atomic.AddUint64(&DefaultSnmp.RepeatSegs, 1)
 			break
 		}
 		if _itimediff(sn, seg.sn) > 0 {
-			after_idx = i
+			insert_idx = i + 1
 			break
 		}
 	}
 
 	if !repeat {
-		if after_idx == -1 {
-			kcp.rcv_buf = append([]Segment{*newseg}, kcp.rcv_buf...)
+		if insert_idx == n+1 {
+			kcp.rcv_buf = append(kcp.rcv_buf, *newseg)
 		} else {
-			kcp.rcv_buf = append(kcp.rcv_buf[:after_idx+1], append([]Segment{*newseg}, kcp.rcv_buf[after_idx+1:]...)...)
+			kcp.rcv_buf = append(kcp.rcv_buf, Segment{})
+			copy(kcp.rcv_buf[insert_idx+1:], kcp.rcv_buf[insert_idx:])
+			kcp.rcv_buf[insert_idx] = *newseg
 		}
 	}
 
@@ -407,13 +432,15 @@ func (kcp *KCP) parse_data(newseg *Segment) {
 	kcp.rcv_buf = kcp.rcv_buf[count:]
 }
 
-// when you received a low level packet (eg. UDP packet), call it
+// Input when you received a low level packet (eg. UDP packet), call it
 func (kcp *KCP) Input(data []byte) int {
 	una := kcp.snd_una
 	if len(data) < IKCP_OVERHEAD {
-		return 0
+		return -1
 	}
 
+	var maxack uint32
+	var flag int
 	for {
 		var ts, sn, length, una, conv uint32
 		var wnd uint16
@@ -454,6 +481,12 @@ func (kcp *KCP) Input(data []byte) int {
 			}
 			kcp.parse_ack(sn)
 			kcp.shrink_buf()
+			if flag == 0 {
+				flag = 1
+				maxack = sn
+			} else if _itimediff(sn, maxack) > 0 {
+				maxack = sn
+			}
 		} else if cmd == IKCP_CMD_PUSH {
 			if _itimediff(sn, kcp.rcv_nxt+kcp.rcv_wnd) < 0 {
 				kcp.ack_push(sn, ts)
@@ -481,6 +514,10 @@ func (kcp *KCP) Input(data []byte) int {
 		}
 
 		data = data[length:]
+	}
+
+	if flag != 0 {
+		kcp.parse_fastack(maxack)
 	}
 
 	if _itimediff(kcp.snd_una, una) > 0 {
@@ -537,9 +574,6 @@ func (kcp *KCP) flush() {
 	for i := 0; i < count; i++ {
 		size := len(buffer) - len(ptr)
 		if size+IKCP_OVERHEAD > int(kcp.mtu) {
-			if size == 0 {
-				debug.Println("wtf")
-			}
 			kcp.output(buffer, size, kcp.extra)
 			ptr = buffer
 		}
@@ -576,9 +610,6 @@ func (kcp *KCP) flush() {
 		seg.cmd = IKCP_CMD_WASK
 		size := len(buffer) - len(ptr)
 		if size+IKCP_OVERHEAD > int(kcp.mtu) {
-			if size == 0 {
-				debug.Println("wtf")
-			}
 			kcp.output(buffer, size, kcp.extra)
 			ptr = buffer
 		}
@@ -590,9 +621,6 @@ func (kcp *KCP) flush() {
 		seg.cmd = IKCP_CMD_WINS
 		size := len(buffer) - len(ptr)
 		if size+IKCP_OVERHEAD > int(kcp.mtu) {
-			if size == 0 {
-				debug.Println("wtf")
-			}
 			kcp.output(buffer, size, kcp.extra)
 			ptr = buffer
 		}
@@ -657,14 +685,28 @@ func (kcp *KCP) flush() {
 			} else {
 				segment.rto += kcp.rx_rto / 2
 			}
+			segment.rto = _imin_(segment.rto, 8*kcp.rx_rto)
 			segment.resendts = current + segment.rto
 			lost = true
+			atomic.AddUint64(&DefaultSnmp.RetransSegs, 1)
+			atomic.AddUint64(&DefaultSnmp.LostSegs, 1)
 		} else if segment.fastack >= resent {
 			needsend = true
 			segment.xmit++
 			segment.fastack = 0
 			segment.resendts = current + segment.rto
 			change++
+			atomic.AddUint64(&DefaultSnmp.RetransSegs, 1)
+			atomic.AddUint64(&DefaultSnmp.FastRetransSegs, 1)
+		} else if segment.fastack > 0 && len(kcp.snd_queue) == 0 {
+			// early retransmit
+			needsend = true
+			segment.xmit++
+			segment.fastack = 0
+			segment.resendts = current + segment.rto
+			change++
+			atomic.AddUint64(&DefaultSnmp.RetransSegs, 1)
+			atomic.AddUint64(&DefaultSnmp.EarlyRetransSegs, 1)
 		}
 
 		if needsend {
@@ -676,9 +718,6 @@ func (kcp *KCP) flush() {
 			need := IKCP_OVERHEAD + len(segment.data)
 
 			if size+need >= int(kcp.mtu) {
-				if size == 0 {
-					debug.Println("wtf")
-				}
 				kcp.output(buffer, size, kcp.extra)
 				ptr = buffer
 			}
@@ -700,6 +739,7 @@ func (kcp *KCP) flush() {
 	}
 
 	// update ssthresh
+	// rate halving, https://tools.ietf.org/html/rfc6937
 	if change != 0 {
 		inflight := kcp.snd_nxt - kcp.snd_una
 		kcp.ssthresh = inflight / 2
@@ -710,6 +750,7 @@ func (kcp *KCP) flush() {
 		kcp.incr = kcp.cwnd * kcp.mss
 	}
 
+	// congestion control, https://tools.ietf.org/html/rfc5681
 	if lost {
 		kcp.ssthresh = cwnd / 2
 		if kcp.ssthresh < IKCP_THRESH_MIN {
@@ -725,7 +766,7 @@ func (kcp *KCP) flush() {
 	}
 }
 
-// update state (call it repeatedly, every 10ms-100ms), or you can ask
+// Update updates state (call it repeatedly, every 10ms-100ms), or you can ask
 // ikcp_check when to call it again (without ikcp_input/_send calling).
 // 'current' - current timestamp in millisec.
 func (kcp *KCP) Update(current uint32) {
@@ -754,7 +795,7 @@ func (kcp *KCP) Update(current uint32) {
 	}
 }
 
-// Determine when should you invoke ikcp_update:
+// Check determines when should you invoke ikcp_update:
 // returns when you should invoke ikcp_update in millisec, if there
 // is no ikcp_input/_send calling. you can call ikcp_update in that
 // time, instead of call update repeatly.
@@ -803,7 +844,7 @@ func (kcp *KCP) Check(current uint32) uint32 {
 	return current + minimal
 }
 
-// change MTU size, default is 1400
+// SetMtu changes MTU size, default is 1400
 func (kcp *KCP) SetMtu(mtu int) int {
 	if mtu < 50 || mtu < IKCP_OVERHEAD {
 		return -1
@@ -818,16 +859,7 @@ func (kcp *KCP) SetMtu(mtu int) int {
 	return 0
 }
 
-func (kcp *KCP) Interval(interval int) int {
-	if interval > 5000 {
-		interval = 5000
-	} else if interval < 10 {
-		interval = 10
-	}
-	kcp.interval = uint32(interval)
-	return 0
-}
-
+// NoDelay options
 // fastest: ikcp_nodelay(kcp, 1, 20, 2, 1)
 // nodelay: 0:disable(default), 1:enable
 // interval: internal update timer interval in millisec, default is 100ms
@@ -859,7 +891,7 @@ func (kcp *KCP) NoDelay(nodelay, interval, resend, nc int) int {
 	return 0
 }
 
-// set maximum window size: sndwnd=32, rcvwnd=32 by default
+// WndSize sets maximum window size: sndwnd=32, rcvwnd=32 by default
 func (kcp *KCP) WndSize(sndwnd, rcvwnd int) int {
 	if sndwnd > 0 {
 		kcp.snd_wnd = uint32(sndwnd)
@@ -870,7 +902,7 @@ func (kcp *KCP) WndSize(sndwnd, rcvwnd int) int {
 	return 0
 }
 
-// get how many packet is waiting to be sent
+// WaitSnd gets how many packet is waiting to be sent
 func (kcp *KCP) WaitSnd() int {
 	return len(kcp.snd_buf) + len(kcp.snd_queue)
 }
