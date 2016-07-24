@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"net"
-
 	"time"
 
 	"gopp"
@@ -32,6 +31,10 @@ type Tunneld struct {
 	serverReadyReadChan chan ServerReadyReadEvent
 	serverCloseChan     chan ServerCloseEvent
 	channelGCChan       chan ChannelGCEvent
+	udpReadyReadChan    chan UdpReadyReadEvent
+
+	// multipath-udp
+	udpSrv net.PacketConn
 }
 
 func NewTunneld() *Tunneld {
@@ -48,6 +51,13 @@ func NewTunneld() *Tunneld {
 	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
 	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
 	t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
+
+	// multipath-udp
+	udpSrv, err := net.ListenPacket("udp", ":18588")
+	this.udpSrv = udpSrv
+	if err != nil {
+		panic(err)
+	}
 
 	///
 	return this
@@ -66,6 +76,7 @@ func (this *Tunneld) serve() {
 	this.channelGCChan = make(chan ChannelGCEvent, mpcsz)
 	this.serverReadyReadChan = make(chan ServerReadyReadEvent, mpcsz)
 	this.serverCloseChan = make(chan ServerCloseEvent, mpcsz)
+	this.udpReadyReadChan = make(chan UdpReadyReadEvent, mpcsz)
 
 	// install pollers
 	go func() {
@@ -99,6 +110,8 @@ func (this *Tunneld) serve() {
 		}
 	}()
 
+	go this.serveUdp()
+
 	// like event handler
 	for {
 		select {
@@ -108,6 +121,8 @@ func (this *Tunneld) serve() {
 		//	this.processKcpOutput(evt.buf, evt.size, evt.extra)
 		case evt := <-this.serverReadyReadChan:
 			this.processServerReadyRead(evt.ch, evt.buf, evt.size)
+		case evt := <-this.udpReadyReadChan:
+			this.processUdpReadyRead(evt.addr, evt.buf, evt.size)
 		case evt := <-this.serverCloseChan:
 			this.promiseChannelClose(evt.ch)
 		case <-this.toxPollChan:
@@ -123,6 +138,49 @@ func (this *Tunneld) serve() {
 			this.kcpCheckClose()
 		case <-this.channelGCChan:
 			this.channelGC()
+		}
+	}
+}
+
+///////////
+func (this *Tunneld) serveUdp() {
+	info.Println("Listen UDP:", this.udpSrv.LocalAddr().String())
+
+	stop := false
+	for !stop {
+		buf := make([]byte, 1600)
+		rdn, addr, err := this.udpSrv.ReadFrom(buf)
+		if err != nil {
+			debug.Println(rdn, addr, err)
+		} else {
+			this.udpReadyReadChan <- UdpReadyReadEvent{addr, buf[0:rdn], rdn}
+		}
+	}
+}
+
+func (this *Tunneld) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
+	// info.Println(addr, string(buf), size)
+	debug.Println(addr, string(buf), size)
+	// kcp包前4字段为conv，little hacky
+	if len(buf) < 4 {
+		errl.Println("wtf")
+	}
+
+	// maybe check ping packet
+
+	// unpack kcp package
+	conv := binary.LittleEndian.Uint32(buf)
+	ch := this.chpool.pool2[conv]
+	if ch == nil {
+		errl.Println("channel not found, maybe has some problem, maybe closed", conv)
+	} else {
+		n := ch.kcp.Input(buf)
+		debug.Println("udp->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+
+		if ch.udp_peer_addr == nil ||
+			(ch.udp_peer_addr != nil && addr.String() != ch.udp_peer_addr.String()) {
+			info.Printf("maybe nat change for client: %s => %s.\n", ch.udp_peer_addr, addr)
+			ch.udp_peer_addr = addr
 		}
 	}
 }
@@ -220,6 +278,15 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 	} else {
 		debug.Println("kcp->tox:", len(msg), time.Now().String())
 	}
+
+	// multipath-udp backend
+	if ch.udp_peer_addr != nil {
+		uaddr := ch.udp_peer_addr
+		wrn, err := this.udpSrv.WriteTo(buf[:size], uaddr)
+		if err != nil {
+			errl.Println(err, wrn)
+		}
+	}
 }
 
 func (this *Tunneld) processKcpReadyRead(ch *Channel) {
@@ -275,6 +342,8 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	// info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 
 	repkt := ch.makeConnectACKPacket()
+	repkt.data = fmt.Sprintf("%s:%d", getOutboundIp(),
+		this.udpSrv.LocalAddr().(*net.UDPAddr).Port)
 	r, err := this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
 	if err != nil {
 		debug.Println(err, r)
@@ -490,10 +559,13 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 	if buf[0] == 191 {
 		buf = buf[1:]
 		// kcp包前4字段为conv，little hacky
+		if len(buf) < 4 {
+			errl.Println("wtf")
+		}
 		conv := binary.LittleEndian.Uint32(buf)
 		ch := this.chpool.pool2[conv]
 		if ch == nil {
-			info.Println("channel not found, maybe has some problem, maybe already closed", conv)
+			errl.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		} else {
 			n := ch.kcp.Input(buf)
 			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
