@@ -2,13 +2,15 @@ package main
 
 import (
 	"fmt"
-	"github.com/bitly/go-simplejson"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"sort"
 	"time"
+
 	"tox"
+
+	"github.com/bitly/go-simplejson"
 )
 
 var servers = []interface{}{
@@ -141,8 +143,13 @@ func switchServer(t *tox.Tox) {
 	newNodes := get3nodes()
 	for _, node := range newNodes {
 		r1, err := t.Bootstrap(node.ipaddr, node.port, node.pubkey)
-		r2, err := t.AddTcpRelay(node.ipaddr, node.port, node.pubkey)
-		info.Println("bootstrap:", r1, err, r2, node.ipaddr)
+		if node.status_tcp {
+			r2, err := t.AddTcpRelay(node.ipaddr, node.port, node.pubkey)
+			info.Println("bootstrap(tcp):", r1, err, r2, node.ipaddr, node.last_ping, node.status_tcp)
+		} else {
+			info.Println("bootstrap(udp):", r1, err, node.ipaddr,
+				node.last_ping, node.status_tcp, node.last_ping_rt)
+		}
 	}
 	currNodes = newNodes
 }
@@ -157,7 +164,7 @@ func get3nodes() (nodes [3]ToxNode) {
 		idx := rand.Int() % len(allNodes)
 		_, ok1 := idxes[idx]
 		_, ok2 := currips[allNodes[idx].ipaddr]
-		if !ok1 && !ok2 && allNodes[idx].last_ping > 0 {
+		if !ok1 && !ok2 && allNodes[idx].status_tcp == true && allNodes[idx].last_ping_rt > 0 {
 			idxes[idx] = true
 			if len(idxes) == 3 {
 				break
@@ -180,27 +187,51 @@ func init() {
 	go pingNodes()
 }
 
+// fixme: chown root.root toxtun-go && chmod u+s toxtun-go
 // should block
 func pingNodes() {
-	for {
-		time.Sleep(30 * time.Second)
-
+	stop := false
+	for !stop {
+		btime := time.Now()
+		errcnt := 0
 		for idx, node := range allNodes {
 			if false {
 				log.Println(idx, node)
 			}
+			if true {
+				rtt, err := Ping0(node.ipaddr, 3)
+				ok := (err == nil)
+				if !ok {
+					// log.Println("ping", ok, node.ipaddr, rtt.String())
+					errcnt += 1
+				}
+				if ok {
+					allNodes[idx].last_ping_rt = uint(time.Now().Unix())
+					allNodes[idx].rtt = rtt
+				} else {
+					allNodes[idx].last_ping_rt = uint(0)
+					allNodes[idx].rtt = time.Duration(0)
+				}
+			}
 		}
+		etime := time.Now()
+		log.Println("Pinged:", len(allNodes), errcnt, etime.Sub(btime))
+
+		// TODO longer ping interval
+		time.Sleep(30 * time.Second)
 	}
 }
 
 func initThirdPartyNodes() {
 	for idx := 0; idx < 3*3; idx += 3 {
 		node := ToxNode{
-			isthird:   true,
-			ipaddr:    servers[idx].(string),
-			port:      servers[idx+1].(uint16),
-			pubkey:    servers[idx+2].(string),
-			last_ping: uint(time.Now().Unix()),
+			isthird:      true,
+			ipaddr:       servers[idx].(string),
+			port:         servers[idx+1].(uint16),
+			pubkey:       servers[idx+2].(string),
+			last_ping:    uint(time.Now().Unix()),
+			last_ping_rt: uint(time.Now().Unix()),
+			status_tcp:   true,
 		}
 
 		allNodes = append(allNodes, node)
@@ -225,11 +256,13 @@ func initToxNodes() {
 				len(nodej.Get("tcp_ports").MustArray()))
 		*/
 		node := ToxNode{
-			ipaddr:    nodej.Get("ipv4").MustString(),
-			port:      uint16(nodej.Get("port").MustUint64()),
-			pubkey:    nodej.Get("public_key").MustString(),
-			last_ping: uint(nodej.Get("last_ping").MustUint64()),
-			weight:    calcNodeWeight(nodej),
+			ipaddr:       nodej.Get("ipv4").MustString(),
+			port:         uint16(nodej.Get("port").MustUint64()),
+			pubkey:       nodej.Get("public_key").MustString(),
+			last_ping:    uint(nodej.Get("last_ping").MustUint64()),
+			status_tcp:   nodej.Get("status_tcp").MustBool(),
+			last_ping_rt: uint(time.Now().Unix()),
+			weight:       calcNodeWeight(nodej),
 		}
 
 		allNodes = append(allNodes, node)
@@ -255,15 +288,19 @@ var allNodes = make([]ToxNode, 0)
 var currNodes [3]ToxNode
 
 type ToxNode struct {
-	isthird   bool
-	ipaddr    string
-	port      uint16
-	pubkey    string
-	weight    int
-	usetimes  int
-	legacy    int
-	chktimes  int
-	last_ping uint
+	isthird    bool
+	ipaddr     string
+	port       uint16
+	pubkey     string
+	weight     int
+	usetimes   int
+	legacy     int
+	chktimes   int
+	last_ping  uint
+	status_tcp bool
+	///
+	last_ping_rt uint // 程序内ping的时间
+	rtt          time.Duration
 }
 
 type ByRand []ToxNode

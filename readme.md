@@ -17,6 +17,8 @@
     go get -u github.com/bitly/go-simplejson
     go get -u github.com/GianlucaGuarini/go-observable
     go get -u github.com/go-ini/ini
+	go get -u github.com/tatsushid/go-fastping
+    go get -u golang.org/x/net/icmp
     
 
 ### 安装
