@@ -14,6 +14,7 @@ const (
 var (
 	// from config_manual.go
 	outboundip = outboundip_const
+	mpcsz      = 256
 )
 
 type TunnelRecord struct {

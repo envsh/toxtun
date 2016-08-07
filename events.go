@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"reflect"
 	"time"
 )
 
@@ -35,12 +36,15 @@ type NewConnEvent struct {
 	times int
 	btime time.Time
 }
+
+// TODO tox prefix?
 type ClientReadyReadEvent struct {
 	ch   *Channel
 	buf  []byte
 	size int
 }
 type ServerReadyReadEvent ClientReadyReadEvent
+
 type ClientCloseEvent struct {
 	ch *Channel
 }
@@ -54,4 +58,9 @@ type UdpReadyReadEvent struct {
 	addr net.Addr
 	buf  []byte
 	size int
+}
+
+type CommonEvent struct {
+	t reflect.Type
+	v reflect.Value
 }

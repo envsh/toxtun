@@ -78,3 +78,7 @@ func isReservedIp(ip net.IP) bool {
 	}
 	return false
 }
+
+func isReservedIpStr(ip string) bool {
+	return isReservedIp(net.ParseIP(ip))
+}
