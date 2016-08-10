@@ -69,6 +69,7 @@
 - [ ] MultiPath-TCP类似原理支持（多传输通道：tox/UDP/else）
 - [ ] tunnelc/tunneld实现的合并
 - [ ] 同时做客户端或者服务器端
+- [ ] MultiPath 智能选择与参数控制
 
 
 ### 创建连接流程
