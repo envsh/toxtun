@@ -70,6 +70,7 @@
 - [ ] tunnelc/tunneld实现的合并
 - [ ] 同时做客户端或者服务器端
 - [ ] MultiPath 智能选择与参数控制
+- [ ] 每个tunnel一个kcp实例方式
 
 
 ### 创建连接流程
