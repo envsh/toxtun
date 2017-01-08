@@ -18,6 +18,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -61,12 +62,20 @@ func Ping1(addr string, timeout int) (time.Duration, error) {
 
 func Ping0(addr string, timeout int) (time.Duration, error) {
 	btime := time.Now()
-	ok := Ping(addr, timeout)
+	err := Ping(addr, timeout)
 	etime := time.Now()
-	if ok {
+	if err == nil {
 		return etime.Sub(btime), nil
 	} else {
-		return etime.Sub(btime), errors.New("timeout")
+		if strings.Contains(err.Error(), "socket: operation not permitted") {
+			log.Panicln(err, "\ntry sudo chmod u+s /bin/ping\n"+
+				"+This package now only implements ICMP ping using raw socket so the program\n"+
+				"using this package needs to be run as root user.\n")
+			// sudo setcap "cap_net_raw+ep" toxtun
+			// sudo chown root toxtun
+			// sudo chmod ugo+s process
+		}
+		return etime.Sub(btime), err
 	}
 }
 
@@ -177,9 +186,9 @@ func parseICMPEcho(b []byte) (*icmpEcho, error) {
 	return p, nil
 }
 
-func Ping(address string, timeout int) bool {
+func Ping(address string, timeout int) error {
 	err := Pinger(address, timeout)
-	return err == nil
+	return err
 }
 
 func Pinger(address string, timeout int) error {

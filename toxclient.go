@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"tox"
+	"github.com/kitech/go-toxcore"
 
 	"github.com/bitly/go-simplejson"
 )
@@ -71,13 +71,13 @@ func makeTox(name string) *tox.Tox {
 	debug.Println("keys:", pubkey, seckey, len(pubkey), len(seckey))
 	info.Println("toxid:", toxid)
 
-	defaultName, err := t.SelfGetName()
+	defaultName := t.SelfGetName()
 	humanName := nickPrefix + toxid[0:5]
 	if humanName != defaultName {
 		t.SelfSetName(humanName)
 	}
-	humanName, err = t.SelfGetName()
-	debug.Println(humanName, defaultName, err)
+	humanName = t.SelfGetName()
+	debug.Println(humanName, defaultName)
 
 	defaultStatusText, err := t.SelfGetStatusMessage()
 	if defaultStatusText != statusText {
@@ -160,7 +160,7 @@ func get3nodes() (nodes [3]ToxNode) {
 	for idx := 0; idx < len(currNodes); idx++ {
 		currips[currNodes[idx].ipaddr] = true
 	}
-	for {
+	for n := 0; n < len(allNodes)*3; n++ {
 		idx := rand.Int() % len(allNodes)
 		_, ok1 := idxes[idx]
 		_, ok2 := currips[allNodes[idx].ipaddr]
@@ -170,6 +170,9 @@ func get3nodes() (nodes [3]ToxNode) {
 				break
 			}
 		}
+	}
+	if len(idxes) < 3 {
+		errl.Println("can not find 3 new nodes:", idxes)
 	}
 
 	_idx := 0
@@ -199,13 +202,14 @@ func pingNodes() {
 				log.Println(idx, node)
 			}
 			if true {
+				// rtt, err := Ping0(node.ipaddr, 3)
 				rtt, err := Ping0(node.ipaddr, 3)
-				ok := (err == nil)
-				if !ok {
+				if err != nil {
 					// log.Println("ping", ok, node.ipaddr, rtt.String())
+					log.Println("ping", err, node.ipaddr, rtt.String())
 					errcnt += 1
 				}
-				if ok {
+				if err == nil {
 					allNodes[idx].last_ping_rt = uint(time.Now().Unix())
 					allNodes[idx].rtt = rtt
 				} else {
@@ -215,7 +219,7 @@ func pingNodes() {
 			}
 		}
 		etime := time.Now()
-		log.Println("Pinged:", len(allNodes), errcnt, etime.Sub(btime))
+		log.Printf("Pinged all=%d, errcnt=%d, %v\n", len(allNodes), errcnt, etime.Sub(btime))
 
 		// TODO longer ping interval
 		time.Sleep(30 * time.Second)

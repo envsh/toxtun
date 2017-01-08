@@ -58,14 +58,14 @@
 ### TODOs
 - [x] 配置参数
 - [x] 统计服务模块
-- [ ] 多tunnel支持
+- [ ] 多端口tunnel支持
 - [ ] 数据编码：JSON=>MsgPack
 - [x] toxnet/friend失联重连
 - [x] 关闭连接原因
 - [ ] 活动连接读写超时
 - [ ] 应该还能再加快传输速度
-- [ ] kcp的三种模式
-- [ ] UDP协议支持
+- [x] kcp的三种模式
+- [x] UDP协议tunnel支持
 - [ ] MultiPath-TCP类似原理支持（多传输通道：tox/UDP/else）
 - [ ] tunnelc/tunneld实现的合并
 - [ ] 同时做客户端或者服务器端

@@ -9,8 +9,8 @@ import (
 	"encoding/binary"
 	"time"
 
+	"github.com/kitech/go-toxcore"
 	"gopp"
-	"tox"
 )
 
 var (
@@ -411,7 +411,7 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 }
 
 //////////////
-func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status uint32, extra interface{}) {
+func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra interface{}) {
 	toxtunid := config.recs[0].rpubkey
 	_, err := t.FriendByPublicKey(toxtunid)
 	if err != nil {
@@ -435,7 +435,7 @@ func (this *Tunnelc) onToxnetFriendRequest(t *tox.Tox, friendId string, message 
 	debug.Println(friendId, message)
 }
 
-func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status uint32, userData interface{}) {
+func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status int, userData interface{}) {
 	fid, _ := this.tox.FriendGetPublicKey(friendNumber)
 	info.Println("peer status (fn/st/id):", friendNumber, status, fid)
 	if status == 0 {

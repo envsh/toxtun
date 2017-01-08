@@ -11,8 +11,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/kitech/go-toxcore"
 	"gopp"
-	"tox"
 )
 
 type Tunneld struct {
@@ -447,7 +447,7 @@ func (this *Tunneld) channelGC() {
 }
 
 ////////////////
-func (this *Tunneld) onToxnetSelfConnectionStatus(t *tox.Tox, status uint32, extra interface{}) {
+func (this *Tunneld) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra interface{}) {
 	info.Println("mytox status:", status)
 	if status == 0 {
 		switchServer(t)
@@ -468,7 +468,7 @@ func (this *Tunneld) onToxnetFriendRequest(t *tox.Tox, friendId string, message 
 	t.WriteSavedata(fname)
 }
 
-func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status uint32, userData interface{}) {
+func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status int, userData interface{}) {
 	fid, _ := this.tox.FriendGetPublicKey(friendNumber)
 	info.Println("peer status (fn/st/id):", friendNumber, status, fid)
 	if status == 0 {
