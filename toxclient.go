@@ -187,7 +187,7 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 	initThirdPartyNodes()
 	initToxNodes()
-	go pingNodes()
+	// go pingNodes()
 }
 
 // fixme: chown root.root toxtun-go && chmod u+s toxtun-go

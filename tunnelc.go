@@ -24,20 +24,14 @@ type Tunnelc struct {
 	srv    net.Listener
 	chpool *ChannelPool
 
-	toxPollChan chan ToxPollEvent
-	// toxReadyReadChan    chan ToxReadyReadEvent
-	// toxMessageChan      chan ToxMessageEvent
-	kcpPollChan chan KcpPollEvent
-	// kcpReadyReadChan    chan KcpReadyReadEvent
-	// kcpOutputChan       chan KcpOutputEvent
+	toxPollChan         chan ToxPollEvent
+	kcpPollChan         chan KcpPollEvent
 	newConnChan         chan NewConnEvent
 	clientReadyReadChan chan ClientReadyReadEvent
 	clientCloseChan     chan ClientCloseEvent
 	clientCheckACKChan  chan ClientCheckACKEvent
-	udpReadyReadChan    chan UdpReadyReadEvent
 
 	// multipath-udp
-	udpPeer net.PacketConn
 }
 
 func NewTunnelc() *Tunnelc {
@@ -49,27 +43,12 @@ func NewTunnelc() *Tunnelc {
 
 	// callbacks
 	t.CallbackSelfConnectionStatus(this.onToxnetSelfConnectionStatus, nil)
-	t.CallbackFriendRequest(this.onToxnetFriendRequest, nil)
+	// t.CallbackFriendRequest(this.onToxnetFriendRequest, nil)
 	t.CallbackFriendConnectionStatus(this.onToxnetFriendConnectionStatus, nil)
 	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
-	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
-	t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
+	// t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
+	// t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
 
-	// multipath-udp
-	for i := 0; i < 5; i++ {
-		udpPeer, err := net.ListenPacket("udp", fmt.Sprintf(":%d", 18588+i))
-		if err != nil {
-			errl.Println(err, udpPeer)
-			if i == 4 {
-				panic(err)
-			}
-		} else {
-			this.udpPeer = udpPeer
-			break
-		}
-	}
-
-	//
 	return this
 }
 
@@ -85,16 +64,11 @@ func (this *Tunnelc) serve() {
 
 	mpcsz := 256
 	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
-	// this.toxReadyReadChan = make(chan ToxReadyReadEvent, 0)
-	// this.toxMessageChan = make(chan ToxMessageEvent, 0)
 	this.kcpPollChan = make(chan KcpPollEvent, mpcsz)
-	// this.kcpReadyReadChan = make(chan KcpReadyReadEvent, 0)
-	// this.kcpOutputChan = make(chan KcpOutputEvent, 0)
 	this.newConnChan = make(chan NewConnEvent, mpcsz)
 	this.clientReadyReadChan = make(chan ClientReadyReadEvent, mpcsz)
 	this.clientCloseChan = make(chan ClientCloseEvent, mpcsz)
 	this.clientCheckACKChan = make(chan ClientCheckACKEvent, 0)
-	this.udpReadyReadChan = make(chan UdpReadyReadEvent, mpcsz)
 
 	// install pollers
 	go func() {
@@ -104,35 +78,18 @@ func (this *Tunnelc) serve() {
 			// iterate(this.tox)
 		}
 	}()
-	go func() {
-		for {
-			time.Sleep(20 * time.Millisecond)
-			this.kcpPollChan <- KcpPollEvent{}
-			// this.serveKcp()
-		}
-	}()
+
 	go this.serveTcp()
-	go this.serveUdp()
 
 	// like event handler
 	for {
 		select {
-		// case evt := <-this.toxReadyReadChan:
-		// 	this.processFriendLossyPacket(this.tox, evt.friendNumber, evt.message, nil)
-		// case evt := <-this.toxMessageChan:
-		// 	this.processFriendMessage(this.tox, evt.friendNumber, evt.message, nil)
-		// case evt := <-this.kcpReadyReadChan:
-		// 	this.processKcpReadyRead(evt.ch)
-		// case evt := <-this.kcpOutputChan:
-		// 	this.processKcpOutput(evt.buf, evt.size, evt.extra)
 		case evt := <-this.newConnChan:
 			this.initConnChanel(evt.conn, evt.times, evt.btime)
 		case evt := <-this.clientReadyReadChan:
 			this.processClientReadyRead(evt.ch, evt.buf, evt.size)
 		case evt := <-this.clientCloseChan:
 			this.promiseChannelClose(evt.ch)
-		case evt := <-this.udpReadyReadChan:
-			this.processUdpReadyRead(evt.addr, evt.buf, evt.size)
 		case <-this.toxPollChan:
 			iterate(this.tox)
 		case <-this.kcpPollChan:
@@ -140,42 +97,6 @@ func (this *Tunnelc) serve() {
 		case evt := <-this.clientCheckACKChan:
 			this.clientCheckACKRecved(evt.ch)
 		}
-	}
-}
-
-//
-func (this *Tunnelc) serveUdp() {
-	info.Println("Listen UDP:", this.udpPeer.LocalAddr().String())
-
-	for {
-		buf := make([]byte, 1600)
-		n, addr, err := this.udpPeer.ReadFrom(buf)
-		if err != nil {
-			debug.Println(n, addr, err)
-		} else {
-			this.udpReadyReadChan <- UdpReadyReadEvent{addr, buf[0:n], n}
-		}
-	}
-}
-
-func (this *Tunnelc) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
-	// info.Println(addr, string(buf), size)
-	debug.Println(addr, string(buf), size)
-	// kcp包前4字段为conv，little hacky
-	if len(buf) < 4 {
-		errl.Println("wtf")
-	}
-
-	// maybe check ping packet
-
-	// unpack kcp package
-	conv := binary.LittleEndian.Uint32(buf)
-	ch := this.chpool.pool2[conv]
-	if ch == nil {
-		errl.Println("maybe has some problem:", conv)
-	} else {
-		n := ch.kcp.Input(buf)
-		debug.Println("udp->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 	}
 }
 
@@ -200,8 +121,6 @@ func (this *Tunnelc) serveTcp() {
 
 func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 	ch := NewChannelClient(conn)
-	// ch.ip = "127.0.0.1"
-	// ch.port = "8118"
 	ch.ip = config.recs[0].rhost
 	ch.port = fmt.Sprintf("%d", config.recs[0].rport)
 	this.chpool.putClient(ch)
@@ -312,14 +231,6 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 	}
 
 	// multipath-udp backend
-	uaddr, err := net.ResolveUDPAddr("udp", outboundip)
-	if err != nil {
-		errl.Println(err, uaddr)
-	}
-	wrn, err := this.udpPeer.WriteTo(buf[:size], uaddr)
-	if err != nil {
-		errl.Println(err, wrn)
-	}
 }
 
 func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
@@ -334,14 +245,14 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 
 		// 应用层控制kcp.WaitSnd()的大小
 		for {
-			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
-				sendbuf := gopp.BytesDup(rbuf[:n])
-				// this.processClientReadyRead(ch, rbuf, n)
-				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
-				break
-			} else {
-				time.Sleep(3 * time.Millisecond)
-			}
+			// if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
+			sendbuf := gopp.BytesDup(rbuf[:n])
+			// this.processClientReadyRead(ch, rbuf, n)
+			this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
+			break
+			// } else {
+			//time.Sleep(3 * time.Millisecond)
+			// }
 		}
 	}
 
@@ -462,26 +373,31 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			if ch, ok := this.chpool.pool[pkt.chidcli]; ok {
 				ch.conv = pkt.conv
 				ch.chidsrv = pkt.chidsrv
-				ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
-				ch.kcp.SetMtu(tunmtu)
-				if kcp_mode == "fast" {
-					ch.kcp.WndSize(128, 128)
-					ch.kcp.NoDelay(1, 10, 2, 1)
-				}
+				ch.tp = NewKcpTransport(this.tox)
+				/*
+					ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+					ch.kcp.SetMtu(tunmtu)
+					if kcp_mode == "fast" {
+						ch.kcp.WndSize(128, 128)
+						ch.kcp.NoDelay(1, 10, 2, 1)
+					}
+				*/
 				this.chpool.putClientLacks(ch)
 
 				// send ping to udp
-				uaddr, err := net.ResolveUDPAddr("udp", outboundip)
-				if err != nil {
-					errl.Println(err, uaddr)
-				}
-				ch.udp_peer_addr = uaddr
-				uaddr, err = net.ResolveUDPAddr("udp", pkt.data)
-				if err != nil {
-					errl.Println(err)
-				} else {
+				/*
+					uaddr, err := net.ResolveUDPAddr("udp", outboundip)
+					if err != nil {
+						errl.Println(err, uaddr)
+					}
 					ch.udp_peer_addr = uaddr
-				}
+					uaddr, err = net.ResolveUDPAddr("udp", pkt.data)
+					if err != nil {
+						errl.Println(err)
+					} else {
+						ch.udp_peer_addr = uaddr
+					}
+				*/
 				// wrn, err := this.udpPeer.WriteTo([]byte("hehehheheh"), uaddr)
 				// info.Println(wrn, err)
 

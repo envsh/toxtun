@@ -4,6 +4,8 @@ import (
 	"flag"
 	"log"
 	"os"
+
+	"github.com/kitech/colog"
 )
 
 const (
@@ -21,6 +23,15 @@ var (
 )
 
 func init() {
+	log.SetFlags(log.Flags() | log.Lshortfile)
+	colog.Register()
+	/*
+		log.Println("debug:", 1)
+		log.Println("info:", 1)
+		log.Println("warning:", 1)
+		log.Println("error:", 1)
+	*/
+
 	flag.StringVar(&kcp_mode, "kcp-mode", "fast", "default|fast")
 	if !(kcp_mode == "default" || kcp_mode == "fast") {
 		kcp_mode = "fast"
@@ -49,6 +60,7 @@ func main() {
 	switch inst_mode {
 	case "client":
 		if config == nil {
+			log.Println("error:", "need config file")
 			flag.PrintDefaults()
 			os.Exit(-1)
 		}
@@ -63,3 +75,10 @@ func main() {
 	}
 
 }
+
+const (
+	ldebugp   = "debug:"
+	linfop    = "info:"
+	lwarningp = "warning:"
+	lerrorp   = "error:"
+)

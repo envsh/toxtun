@@ -9,24 +9,26 @@ import (
 /*
 插件式抽象传输层，tox/udp/ethernum/...
 */
-type Transport struct {
+type TransportBase struct {
 	enable                bool
-	server                bool             // 是否是server模式
-	weight                int              // 传输包时的权重
+	server                bool // 是否是server模式
+	weight                int  // 传输包时的权重
+	lossy                 bool
 	readyReadNoticeChan   chan CommonEvent // 无数据
 	readyReadDataChanType reflect.Type
 }
 
-type ITransport interface {
+type Transport interface {
 	init() bool
 	serve()
 	getReadyReadChan() <-chan CommonEvent
 	getReadyReadChanType() reflect.Type
 	getEventData(evt CommonEvent) ([]byte, int, interface{})
+	sendData(data string) error
 }
 
 type DirectUdpTransport struct {
-	Transport
+	TransportBase
 	udpSrv            net.PacketConn
 	readyReadDataChan chan UdpReadyReadEvent
 	peerIP            string
@@ -163,6 +165,6 @@ func (this *DirectUdpTransport) sendDataClient(buf []byte, size int) int {
 	return wrn
 }
 
-type ToxTransport struct {
-	Transport
+type ToxMessageTransport struct {
+	TransportBase
 }
