@@ -94,13 +94,18 @@ func (this *KcpTransport) getEventData(evt CommonEvent) ([]byte, int, interface{
 	return nil, 0, nil
 }
 func (this *KcpTransport) sendData(data string, to string) error {
-	log.Println(ldebugp)
-	// n := this.kcp.Input([]byte(data))
 	n := this.kcp.Send([]byte(data))
-	// log.Println(ldebugp, n, len(data), len([]byte(data)), IKCP_OVERHEAD)
-	switch n {
-	case -1:
+	switch {
+	case n < 0:
 		log.Println(lerrorp, n)
+		return anyerror(n)
+	case n == 0: // ok
+		if this.server {
+			log.Println(ldebugp, "srv->kcp:", len(data))
+		} else {
+			log.Println(ldebugp, "cli->kcp:", len(data))
+		}
+	case n > 0: // no this ret
 	}
 	return nil
 }
@@ -137,13 +142,13 @@ func (this *KcpTransport) serveKcp() {
 
 		n := kcp.Recv(zbuf)
 		switch n {
-		case -3:
+		case -3: // available size  > 0
 			this.processKcpReadyRead(nil)
 		case -2: // just empty kcp recv queue
 			// errl.Println("kcp recv internal error:", n, this.kcp.PeekSize())
 		case -1: // EAGAIN
 		default:
-			errl.Println("unknown recv:", n)
+			log.Println(lwarningp, "unknown recv:", n)
 		}
 
 	}
@@ -213,25 +218,19 @@ func (this *KcpTransport) kcpCheckClose() {
 func (this *KcpTransport) onKcpOutput(buf []byte, size int, extra interface{}) {
 	if size <= 0 {
 		// 如果总是出现，并且不影响程序运行，那么也就不是bug了
-		// info.Println("wtf")
+		// log.Println(lwarningp, "wtf")
 		return
 	}
-	debug.Println(len(buf), "//", size, "//", string(gopp.SubBytes(buf, 52)))
-	// ch := extra.(*Channel)
+	log.Println(ldebugp, len(buf), "/", size, "/", string(gopp.SubBytes(buf, 52)))
 
-	msg := string([]byte{254}) + string(buf[:size])
 	var err error
 	err = this.tp.sendData(string(buf[:size]), this.ch.toxid)
-	// err := this.FriendSendLossyPacket(ch.toxid, msg)
-	// msg := string([]byte{191}) + string(buf[:size])
-	// err := this.tox.FriendSendLosslessPacket(0, msg)
 	if err != nil {
-		debug.Println(err)
+		log.Println(lerrorp, err)
 	} else {
-		debug.Println("kcp->tox:", len(msg), time.Now().String())
+		log.Println(ldebugp, "kcp->tox:", len(buf))
 	}
 
-	// multipath-udp backend
 }
 
 func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
@@ -247,7 +246,7 @@ func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
 	n := kcp.Recv(buf)
 
 	if len(buf) != n {
-		errl.Println("Invalide kcp recv data")
+		log.Println(lerrorp, "Invalide kcp recv data")
 	}
 
 	pkt := parsePacket(buf)
@@ -255,17 +254,21 @@ func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
 	} else if pkt.isdata() {
 		// ch := this.chpool.pool[pkt.chidsrv]
 		ch = this.ch
-		debug.Println("processing channel data:", ch.chidsrv, len(pkt.data), gopp.StrSuf(pkt.data, 52))
+		log.Println(ldebugp, "processing channel data:", ch.chidsrv, len(pkt.data), gopp.StrSuf(pkt.data, 52))
 		buf, err := base64.StdEncoding.DecodeString(pkt.data)
 		if err != nil {
-			errl.Println(err)
+			log.Println(lerrorp, err)
 		}
 
 		wn, err := ch.conn.Write(buf)
 		if err != nil {
-			errl.Println(err)
+			log.Println(lerrorp, err)
 		}
-		debug.Println("kcp->srv:", wn)
+		if this.server {
+			log.Println(ldebugp, "kcp->srv:", wn)
+		} else {
+			log.Println(ldebugp, "kcp->cli:", wn)
+		}
 		appevt.Trigger("reqbytes", wn, len(buf)+25)
 	} else {
 	}
@@ -275,9 +278,11 @@ func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
 func (this *KcpTransport) processSubTransport(evt CommonEvent) {
 	s := evt.v.Interface().(string)
 	n := this.kcp.Input([]byte(s))
-	switch n {
-	case -1, -10, -2, -3:
+	switch {
+	case n < 0:
 		log.Println(ldebugp, n)
+	case n == 0: // ok
+		log.Println(ldebugp, "tox->kcp:", len(s))
 	}
 }
 

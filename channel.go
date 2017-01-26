@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net"
 	"runtime"
 	"strings"
@@ -141,14 +142,14 @@ func (this *Channel) makeCloseACKPacket() *Packet {
 func (this *Channel) addCloseReason(reason string) {
 	for i := 0; i < len(this.close_reasons); i++ {
 		if reason == this.close_reasons[i] {
-			info.Println("reason already exists, maybe loop,", reason, this.closeReason())
+			log.Println(linfop, "reason already exists, maybe loop,", reason, this.closeReason())
 			break
 		}
 	}
 
 	this.close_reasons = append(this.close_reasons, reason)
 	if len(this.close_reasons) > 5 {
-		info.Println(this.chidcli, this.chidsrv, this.conv)
+		log.Println(linfop, this.chidcli, this.chidsrv, this.conv)
 		panic("wtf")
 	}
 }
@@ -196,7 +197,7 @@ func dumpStacks(pcs []uintptr) {
 	for idx, pc := range pcs {
 		fn := runtime.FuncForPC(pc)
 		file, line := fn.FileLine(pc)
-		info.Println(idx, fn.Name(), file, line)
+		log.Println(linfop, idx, fn.Name(), file, line)
 	}
 }
 
@@ -205,9 +206,9 @@ func (this *ChannelPool) rmClient(ch *Channel) {
 	haserr := false
 
 	if _, ok := this.pool[ch.chidcli]; !ok {
-		errl.Println("maybe already removed.", ch.chidsrv, ch.chidsrv, ch.conv)
+		log.Println(lerrorp, "maybe already removed.", ch.chidsrv, ch.chidsrv, ch.conv)
 		dumpStacks(ch.close_stacks[len(ch.close_stacks)-1])
-		info.Println("=======")
+		log.Println(linfop, "=======")
 		pcs := make([]uintptr, 16)
 		pcn := runtime.Callers(1, pcs)
 		dumpStacks(pcs[0:pcn])
@@ -228,11 +229,11 @@ func (this *ChannelPool) rmClient(ch *Channel) {
 	if haserr {
 		if ch.rmctimes > 2 {
 			// go func() {
-			errl.Println("errinfo:", ch.rmctimes, len(this.pool), len(this.pool2))
+			log.Println(lerrorp, ch.rmctimes, len(this.pool), len(this.pool2))
 			panic(ch.chidcli)
 			// }()
 		} else {
-			errl.Println("errinfo:", ch.rmctimes, len(this.pool), len(this.pool2))
+			log.Println(lerrorp, ch.rmctimes, len(this.pool), len(this.pool2))
 		}
 	}
 	appevt.Trigger("chanact", -1, len(this.pool), len(this.pool2))

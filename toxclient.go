@@ -33,7 +33,7 @@ func makeTox(name string) *tox.Tox {
 	if tox.FileExist(fname) {
 		data, err := ioutil.ReadFile(fname)
 		if err != nil {
-			errl.Println(err)
+			log.Println(lerrorp, err)
 		} else {
 			opt.Savedata_data = data
 			opt.Savedata_type = tox.SAVEDATA_TYPE_TOX_SAVE
@@ -53,7 +53,7 @@ func makeTox(name string) *tox.Tox {
 	if t == nil {
 		panic(nil)
 	}
-	info.Println("TCP port:", opt.Tcp_port)
+	log.Println(linfop, "TCP port:", opt.Tcp_port)
 	if false {
 		time.Sleep(1 * time.Hour)
 	}
@@ -62,14 +62,14 @@ func makeTox(name string) *tox.Tox {
 		r := i * 3
 		r1, err := t.Bootstrap(servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string))
 		r2, err := t.AddTcpRelay(servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string))
-		info.Println("bootstrap:", r1, err, r2, i, r)
+		log.Println(linfop, "bootstrap:", r1, err, r2, i, r)
 	}
 
 	pubkey := t.SelfGetPublicKey()
 	seckey := t.SelfGetSecretKey()
 	toxid := t.SelfGetAddress()
-	debug.Println("keys:", pubkey, seckey, len(pubkey), len(seckey))
-	info.Println("toxid:", toxid)
+	log.Println(ldebugp, "keys:", pubkey, seckey, len(pubkey), len(seckey))
+	log.Println(linfop, "toxid:", toxid)
 
 	defaultName := t.SelfGetName()
 	humanName := nickPrefix + toxid[0:5]
@@ -77,33 +77,33 @@ func makeTox(name string) *tox.Tox {
 		t.SelfSetName(humanName)
 	}
 	humanName = t.SelfGetName()
-	debug.Println(humanName, defaultName)
+	log.Println(ldebugp, humanName, defaultName)
 
 	defaultStatusText, err := t.SelfGetStatusMessage()
 	if defaultStatusText != statusText {
 		t.SelfSetStatusMessage(statusText)
 	}
-	debug.Println(statusText, defaultStatusText, err)
+	log.Println(ldebugp, statusText, defaultStatusText, err)
 
 	sz := t.GetSavedataSize()
 	sd := t.GetSavedata()
-	debug.Println("savedata:", sz, t)
-	debug.Println("savedata", len(sd), t)
+	log.Println(ldebugp, "savedata:", sz, t)
+	log.Println(ldebugp, "savedata", len(sd), t)
 
 	err = t.WriteSavedata(fname)
-	debug.Println("savedata write:", err)
+	log.Println(ldebugp, "savedata write:", err)
 
 	// add friend norequest
 	fv := t.SelfGetFriendList()
 	for _, fno := range fv {
 		fid, err := t.FriendGetPublicKey(fno)
 		if err != nil {
-			debug.Println(err)
+			log.Println(lerrorp, err)
 		} else {
 			t.FriendAddNorequest(fid)
 		}
 	}
-	debug.Println("add friends:", len(fv))
+	log.Println(ldebugp, "add friends:", len(fv))
 
 	return t
 }
@@ -145,9 +145,9 @@ func switchServer(t *tox.Tox) {
 		r1, err := t.Bootstrap(node.ipaddr, node.port, node.pubkey)
 		if node.status_tcp {
 			r2, err := t.AddTcpRelay(node.ipaddr, node.port, node.pubkey)
-			info.Println("bootstrap(tcp):", r1, err, r2, node.ipaddr, node.last_ping, node.status_tcp)
+			log.Println(linfop, "bootstrap(tcp):", r1, err, r2, node.ipaddr, node.last_ping, node.status_tcp)
 		} else {
-			info.Println("bootstrap(udp):", r1, err, node.ipaddr,
+			log.Println(linfop, "bootstrap(udp):", r1, err, node.ipaddr,
 				node.last_ping, node.status_tcp, node.last_ping_rt)
 		}
 	}
@@ -172,7 +172,7 @@ func get3nodes() (nodes [3]ToxNode) {
 		}
 	}
 	if len(idxes) < 3 {
-		errl.Println("can not find 3 new nodes:", idxes)
+		log.Println(lerrorp, "can not find 3 new nodes:", idxes)
 	}
 
 	_idx := 0
@@ -281,7 +281,7 @@ func initToxNodes() {
 			log.Println(idx, node.ipaddr, node.port, node.last_ping)
 		}
 	}
-	info.Println("Load nodes:", len(allNodes))
+	log.Println(linfop, "Load nodes:", len(allNodes))
 }
 
 func calcNodeWeight(nodej *simplejson.Json) int {

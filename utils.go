@@ -1,9 +1,11 @@
 package main
 
 import (
+	"log"
+	"net"
 	"time"
 
-	"net"
+	"gopp"
 )
 
 func iclock() uint32 {
@@ -14,7 +16,7 @@ func iclock() uint32 {
 func getOutboundIp() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
-		errl.Println(err, addrs)
+		log.Println(lerrorp, err, addrs)
 	}
 
 	// 查找公网IP
@@ -83,4 +85,5 @@ func isReservedIpStr(ip string) bool {
 	return isReservedIp(net.ParseIP(ip))
 }
 
-func unused(args ...interface{}) {}
+func unused(args ...interface{})   {}
+func anyerror(v interface{}) error { return gopp.NewErroraN(v, 1) }

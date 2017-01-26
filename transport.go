@@ -77,7 +77,7 @@ func (this *DirectUdpTransport) initServer() bool {
 	if err != nil {
 		log.Fatalln(err, udpSrv)
 	}
-	info.Println("Listen UDP:", this.udpSrv.LocalAddr().String())
+	log.Println(linfop, "Listen UDP:", this.udpSrv.LocalAddr().String())
 	this.udpSrv = udpSrv
 	return true
 }
@@ -105,7 +105,7 @@ func (this *DirectUdpTransport) serveServer() {
 		buf := make([]byte, 1600)
 		rdn, addr, err := this.udpSrv.ReadFrom(buf)
 		if err != nil {
-			debug.Println(rdn, addr, err)
+			log.Println(lerrorp, rdn, addr, err)
 		} else {
 			evt := UdpReadyReadEvent{addr, buf[0:rdn], rdn}
 			this.readyReadNoticeChan <- CommonEvent{reflect.TypeOf(evt), reflect.ValueOf(evt)}
@@ -145,7 +145,7 @@ func (this *DirectUdpTransport) sendData(buf []byte, size int, uaddr net.Addr) i
 func (this *DirectUdpTransport) sendDataServer(buf []byte, size int, uaddr net.Addr) int {
 	wrn, err := this.udpSrv.WriteTo(buf[:size], uaddr)
 	if err != nil {
-		errl.Println(err, wrn)
+		log.Println(lerrorp, err, wrn)
 	}
 	return wrn
 }
@@ -154,13 +154,13 @@ func (this *DirectUdpTransport) sendDataClient(buf []byte, size int) int {
 	outboundip := this.peerIP
 	uaddr, err := net.ResolveUDPAddr("udp", outboundip)
 	if err != nil {
-		errl.Println(err, uaddr)
+		log.Println(lerrorp, err, uaddr)
 	}
 
 	// replace with? this.sendDataServer(buf, size, uaddr)
 	wrn, err := this.udpSrv.WriteTo(buf[:size], uaddr)
 	if err != nil {
-		errl.Println(err, wrn)
+		log.Println(lerrorp, err, wrn)
 	}
 	return wrn
 }

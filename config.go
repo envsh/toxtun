@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"strconv"
 	"strings"
 
@@ -35,7 +36,7 @@ type TunnelConfig struct {
 func NewTunnelConfig(cfg_file string) *TunnelConfig {
 	f, err := ini.Load(cfg_file)
 	if err != nil {
-		errl.Println(err)
+		log.Println(lerrorp, err)
 		return nil
 	}
 

@@ -24,7 +24,7 @@ func NewToxLossyTransport(t *tox.Tox) *ToxLossyTransport {
 	this.chdata = make(chan CommonEvent, mpcsz)
 
 	t.CallbackFriendConnectionStatus(this.onToxnetFriendConnectionStatus, this)
-	t.CallbackFriendMessage(this.onToxnetFriendMessage, this)
+	// t.CallbackFriendMessage(this.onToxnetFriendMessage, this)
 	// t.CallbackFriendLosslessPacketAdd(this.onToxnetFriendLosslessPacket, this)
 	t.CallbackFriendLossyPacketAdd(this.onToxnetFriendLossyPacket, this)
 
@@ -62,7 +62,10 @@ func (this *ToxLossyTransport) onToxnetFriendMessage(t *tox.Tox, friendNumber ui
 }
 
 func (this *ToxLossyTransport) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
-	log.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
+	if userData != this {
+		return // drop uncared message
+	}
+	// log.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
 	buf := string([]byte(message)[1:])
 	this.chdata <- CommonEvent{reflect.TypeOf(buf), reflect.ValueOf(buf)}
 }

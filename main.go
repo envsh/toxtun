@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 
@@ -20,6 +21,16 @@ var (
 	kcp_mode    string // = "default" // fast
 	config_file string // = "toxtun_whtun.ini"
 	config      *TunnelConfig
+	log_level   int = int(colog.LDebug)
+)
+
+const (
+	ltracep   = "trace: "
+	ldebugp   = "debug: "
+	linfop    = "info: "
+	lwarningp = "warning: "
+	lerrorp   = "error: "
+	lalertp   = "alert: "
 )
 
 func init() {
@@ -38,13 +49,15 @@ func init() {
 	}
 
 	flag.StringVar(&config_file, "config", "", "config file .ini")
+	flag.IntVar(&log_level, "log-level", int(colog.LDebug),
+		fmt.Sprintf("%d - %d, default %d\n", colog.LTrace, colog.LAlert, colog.LDebug))
 }
 
 func main() {
 	flag.Parse()
 	if len(config_file) > 0 {
 		config = NewTunnelConfig(config_file)
-		info.Println(config)
+		log.Println(linfop, config)
 	}
 
 	argv := flag.Args()
@@ -75,10 +88,3 @@ func main() {
 	}
 
 }
-
-const (
-	ldebugp   = "debug: "
-	linfop    = "info: "
-	lwarningp = "warning: "
-	lerrorp   = "error: "
-)
