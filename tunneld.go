@@ -171,7 +171,9 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 func (this *Tunneld) processServerReadyRead(ch *Channel, buf []byte, size int) {
 	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
 	pkt := ch.makeDataPacket(sbuf)
-	sn := ch.kcp.Send(pkt.toJson())
+	// sn := ch.kcp.Send(pkt.toJson())
+	ch.tp.sendData(string(pkt.toJson()), "")
+	sn := 0
 	debug.Println("srv->kcp:", sn, size)
 	appevt.Trigger("respbytes", size, len(pkt.toJson())+25) // 25 = kcp header len + 1tox
 }
@@ -288,7 +290,7 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			ch.ip = pkt.remoteip
 			ch.port = pkt.remoteport
 			ch.toxid = friendId
-			ch.tp = NewKcpTransport(this.tox)
+			ch.tp = NewKcpTransport(this.tox, ch, true)
 			/*
 				ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 				ch.kcp.SetMtu(tunmtu)
@@ -326,8 +328,9 @@ func (this *Tunneld) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 		if ch == nil {
 			info.Println("channel not found, maybe has some problem, maybe closed", conv)
 		} else {
-			n := ch.kcp.Input(buf)
-			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+			// n := ch.kcp.Input(buf)
+			// debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+			panic(123)
 		}
 	} else {
 		info.Println("unknown message:", buf[0])
@@ -348,8 +351,9 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 		if ch == nil {
 			errl.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		} else {
-			n := ch.kcp.Input(buf)
-			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+			// n := ch.kcp.Input(buf)
+			// debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+			panic(123)
 		}
 	} else {
 		info.Println("unknown message:", buf[0])

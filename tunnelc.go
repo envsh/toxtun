@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"log"
 	"time"
 
 	"github.com/kitech/go-toxcore"
@@ -93,7 +94,8 @@ func (this *Tunnelc) serve() {
 		case <-this.toxPollChan:
 			iterate(this.tox)
 		case <-this.kcpPollChan:
-			this.serveKcp()
+			// this.serveKcp()
+			panic(123)
 		case evt := <-this.clientCheckACKChan:
 			this.clientCheckACKRecved(evt.ch)
 		}
@@ -171,6 +173,7 @@ func (this *Tunnelc) connectFailedClean(ch *Channel) {
 }
 
 //////////
+/*
 func (this *Tunnelc) serveKcp() {
 	zbuf := make([]byte, 0)
 	if true {
@@ -232,9 +235,10 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 
 	// multipath-udp backend
 }
-
+*/
 func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
+	log.Println(ldebugp)
 	rbuf := make([]byte, rdbufsz)
 	for {
 		n, err := ch.conn.Read(rbuf)
@@ -242,6 +246,7 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 			info.Println("chan read:", err, ch.chidcli, ch.chidsrv, ch.conv)
 			break
 		}
+		log.Println(linfop, n)
 
 		// 应用层控制kcp.WaitSnd()的大小
 		for {
@@ -300,7 +305,10 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
 	pkt := ch.makeDataPacket(sbuf)
-	sn := ch.kcp.Send(pkt.toJson())
+	// sn := ch.kcp.Send(pkt.toJson())
+	log.Println(ldebugp)
+	ch.tp.sendData(string(pkt.toJson()), "")
+	sn := 0
 	debug.Println("cli->kcp:", sn, ch.conv)
 	appevt.Trigger("reqbytes", size, len(pkt.toJson())+25)
 }
@@ -373,7 +381,8 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			if ch, ok := this.chpool.pool[pkt.chidcli]; ok {
 				ch.conv = pkt.conv
 				ch.chidsrv = pkt.chidsrv
-				ch.tp = NewKcpTransport(this.tox)
+				ch.toxid = config.recs[0].rpubkey
+				ch.tp = NewKcpTransport(this.tox, ch, false)
 				/*
 					ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 					ch.kcp.SetMtu(tunmtu)
@@ -454,8 +463,9 @@ func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 			newpkt := ch.makeCloseFINPacket()
 			this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
 		} else {
-			n := ch.kcp.Input(buf)
-			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+			// n := ch.kcp.Input(buf)
+			// debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+			panic(123)
 		}
 	} else {
 		info.Println("unknown message:", buf[0])
@@ -477,8 +487,9 @@ func (this *Tunnelc) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 		if ch == nil {
 			errl.Println("maybe has some problem")
 		}
-		n := ch.kcp.Input(buf)
-		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+		// n := ch.kcp.Input(buf)
+		// debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+		panic(123)
 	} else {
 		info.Println("unknown message:", buf[0])
 	}

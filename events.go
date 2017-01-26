@@ -61,6 +61,6 @@ type UdpReadyReadEvent struct {
 }
 
 type CommonEvent struct {
-	t reflect.Type
+	t reflect.Type // TODO drop
 	v reflect.Value
 }

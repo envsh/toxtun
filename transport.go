@@ -24,7 +24,7 @@ type Transport interface {
 	getReadyReadChan() <-chan CommonEvent
 	getReadyReadChanType() reflect.Type
 	getEventData(evt CommonEvent) ([]byte, int, interface{})
-	sendData(data string) error
+	sendData(data string, to string) error
 }
 
 type DirectUdpTransport struct {

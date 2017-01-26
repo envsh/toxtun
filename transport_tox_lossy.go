@@ -11,7 +11,8 @@ import (
 
 type ToxLossyTransport struct {
 	TransportBase
-	tox *tox.Tox
+	tox    *tox.Tox
+	chdata chan CommonEvent
 }
 
 func NewToxLossyTransport(t *tox.Tox) *ToxLossyTransport {
@@ -20,6 +21,7 @@ func NewToxLossyTransport(t *tox.Tox) *ToxLossyTransport {
 	}
 	this := &ToxLossyTransport{}
 	this.tox = t
+	this.chdata = make(chan CommonEvent, mpcsz)
 
 	t.CallbackFriendConnectionStatus(this.onToxnetFriendConnectionStatus, this)
 	t.CallbackFriendMessage(this.onToxnetFriendMessage, this)
@@ -36,7 +38,7 @@ func (this *ToxLossyTransport) serve() {
 
 }
 func (this *ToxLossyTransport) getReadyReadChan() <-chan CommonEvent {
-	return nil
+	return this.chdata
 }
 func (this *ToxLossyTransport) getReadyReadChanType() reflect.Type {
 	return reflect.TypeOf("123")
@@ -45,8 +47,10 @@ func (this *ToxLossyTransport) getEventData(evt CommonEvent) ([]byte, int, inter
 	return nil, 0, nil
 }
 
-func (this *ToxLossyTransport) sendData(data string) error {
-	return nil
+func (this *ToxLossyTransport) sendData(data string, toxid string) error {
+	msg := string([]byte{254}) + data
+	err := this.FriendSendLossyPacket(toxid, msg)
+	return err
 }
 
 /////
@@ -59,6 +63,8 @@ func (this *ToxLossyTransport) onToxnetFriendMessage(t *tox.Tox, friendNumber ui
 
 func (this *ToxLossyTransport) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
 	log.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
+	buf := string([]byte(message)[1:])
+	this.chdata <- CommonEvent{reflect.TypeOf(buf), reflect.ValueOf(buf)}
 }
 
 func (this *ToxLossyTransport) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {

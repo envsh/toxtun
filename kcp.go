@@ -452,7 +452,7 @@ func (kcp *KCP) Input(data []byte) int {
 
 		data = ikcp_decode32u(data, &conv)
 		if conv != kcp.conv {
-			return -1
+			return -10
 		}
 
 		data = ikcp_decode8u(data, &cmd)

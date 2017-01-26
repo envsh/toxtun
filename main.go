@@ -26,10 +26,10 @@ func init() {
 	log.SetFlags(log.Flags() | log.Lshortfile)
 	colog.Register()
 	/*
-		log.Println("debug:", 1)
-		log.Println("info:", 1)
-		log.Println("warning:", 1)
-		log.Println("error:", 1)
+		log.Println("debug: ")
+		log.Println("info: ", 1)
+		log.Println("warning: ", 1)
+		log.Println("error: ", 1)
 	*/
 
 	flag.StringVar(&kcp_mode, "kcp-mode", "fast", "default|fast")
@@ -77,8 +77,8 @@ func main() {
 }
 
 const (
-	ldebugp   = "debug:"
-	linfop    = "info:"
-	lwarningp = "warning:"
-	lerrorp   = "error:"
+	ldebugp   = "debug: "
+	linfop    = "info: "
+	lwarningp = "warning: "
+	lerrorp   = "error: "
 )

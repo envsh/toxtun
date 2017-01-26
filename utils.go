@@ -82,3 +82,5 @@ func isReservedIp(ip net.IP) bool {
 func isReservedIpStr(ip string) bool {
 	return isReservedIp(net.ParseIP(ip))
 }
+
+func unused(args ...interface{}) {}
