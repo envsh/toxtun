@@ -62,7 +62,8 @@ type Channel struct {
 	toxid   string // 仅用于服务器端
 	// kcp           *KCP
 	// udp_peer_addr net.Addr
-	tp Transport
+	peerVirtAddr string
+	tp           Transport
 
 	// 关闭状态
 	client_socket_close bool

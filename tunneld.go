@@ -121,7 +121,8 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	// info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 
 	repkt := ch.makeConnectACKPacket()
-	repkt.data = fmt.Sprintf("%s:%d", getOutboundIp(), 0)
+	repkt.data = fmt.Sprintf("%s:%d", getOutboundIp(), 0) // TODO
+	repkt.data = ch.tp.localVirtAddr()
 	r, err := this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
 	if err != nil {
 		log.Println(lerrorp, err, r)

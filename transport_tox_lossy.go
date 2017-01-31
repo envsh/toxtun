@@ -20,8 +20,10 @@ func NewToxLossyTransport(t *tox.Tox) *ToxLossyTransport {
 		log.Println(t)
 	}
 	this := &ToxLossyTransport{}
+	this.lossy = true
 	this.tox = t
 	this.chdata = make(chan CommonEvent, mpcsz)
+	this.localVirtAddr_ = t.SelfGetAddress()
 
 	t.CallbackFriendConnectionStatus(this.onToxnetFriendConnectionStatus, this)
 	// t.CallbackFriendMessage(this.onToxnetFriendMessage, this)
@@ -44,13 +46,17 @@ func (this *ToxLossyTransport) getReadyReadChanType() reflect.Type {
 	return reflect.TypeOf("123")
 }
 func (this *ToxLossyTransport) getEventData(evt CommonEvent) ([]byte, int, interface{}) {
-	return nil, 0, nil
+	return []byte(evt.v.Interface().(string)), 0, nil
 }
 
 func (this *ToxLossyTransport) sendData(data string, toxid string) error {
 	msg := string([]byte{254}) + data
 	err := this.FriendSendLossyPacket(toxid, msg)
 	return err
+}
+
+func (this *ToxLossyTransport) localVirtAddr() string {
+	return this.localVirtAddr_
 }
 
 /////

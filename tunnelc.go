@@ -368,6 +368,7 @@ func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 		appevt.Trigger("peeroffline")
 	} else {
 		appevt.Trigger("peeronline", true)
+		t.WriteSavedata(fname)
 	}
 }
 
@@ -382,6 +383,7 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				ch.conv = pkt.conv
 				ch.chidsrv = pkt.chidsrv
 				ch.toxid = config.recs[0].rpubkey
+				ch.peerVirtAddr = pkt.data
 				ch.tp = NewKcpTransport(this.tox, ch, false)
 				/*
 					ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)

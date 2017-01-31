@@ -35,8 +35,13 @@ func NewKcpTransport(t *tox.Tox, ch *Channel, server bool) *KcpTransport {
 	this.server = server
 
 	this.tp = NewToxLossyTransport(t)
-	conv := uint32(123456)
-	conv = ch.conv
+	if server {
+		this.tp = NewDirectUdpTransport()
+	} else {
+		this.tp = NewDirectUdpTransportClient(ch.ip)
+	}
+
+	conv := ch.conv
 	this.kcp = NewKCP(conv, this.onKcpOutput, nil)
 	this.kcp.SetMtu(tunmtu)
 	if kcp_mode == "fast" {
@@ -109,6 +114,9 @@ func (this *KcpTransport) sendData(data string, to string) error {
 	}
 	return nil
 }
+func (this *KcpTransport) localVirtAddr() string {
+	return this.tp.localVirtAddr()
+}
 
 /////
 // TODO 计算kcpNextUpdateWait的逻辑优化
@@ -138,7 +146,7 @@ func (this *KcpTransport) serveKcp() {
 	{
 		zbuf := make([]byte, 0)
 		kcp := this.kcp
-		kcp.Update(uint32(iclock()))
+		kcp.Update(uint32(iclock2()))
 
 		n := kcp.Recv(zbuf)
 		switch n {
@@ -224,7 +232,7 @@ func (this *KcpTransport) onKcpOutput(buf []byte, size int, extra interface{}) {
 	log.Println(ldebugp, len(buf), "/", size, "/", string(gopp.SubBytes(buf, 52)))
 
 	var err error
-	err = this.tp.sendData(string(buf[:size]), this.ch.toxid)
+	err = this.tp.sendData(string(buf[:size]), this.ch.peerVirtAddr)
 	if err != nil {
 		log.Println(lerrorp, err)
 	} else {
@@ -276,13 +284,14 @@ func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
 }
 
 func (this *KcpTransport) processSubTransport(evt CommonEvent) {
-	s := evt.v.Interface().(string)
-	n := this.kcp.Input([]byte(s))
+	// s := evt.v.Interface().(string)
+	data, sz, x := this.tp.getEventData(evt)
+	n := this.kcp.Input(data)
 	switch {
 	case n < 0:
-		log.Println(ldebugp, n)
+		log.Println(ldebugp, n, sz, x)
 	case n == 0: // ok
-		log.Println(ldebugp, "tox->kcp:", len(s))
+		log.Println(ldebugp, "tox->kcp:", len(data))
 	}
 }
 

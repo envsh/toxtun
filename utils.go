@@ -8,7 +8,7 @@ import (
 	"gopp"
 )
 
-func iclock() uint32 {
+func iclock2() uint32 {
 	return uint32((time.Now().UnixNano() / 1000000) & 0xffffffff)
 }
 

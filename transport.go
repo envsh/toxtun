@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 
 /*
 插件式抽象传输层，tox/udp/ethernum/...
+不负责丢包处理功能。(kcp transport 除外)
 */
 type TransportBase struct {
 	enable                bool
@@ -16,6 +18,8 @@ type TransportBase struct {
 	lossy                 bool
 	readyReadNoticeChan   chan CommonEvent // 无数据
 	readyReadDataChanType reflect.Type
+	localVirtAddr_        string
+	// peerVirtAddr_         string // in Channel
 }
 
 type Transport interface {
@@ -25,18 +29,22 @@ type Transport interface {
 	getReadyReadChanType() reflect.Type
 	getEventData(evt CommonEvent) ([]byte, int, interface{})
 	sendData(data string, to string) error
+	localVirtAddr() string
 }
 
+// TODO only port mode
 type DirectUdpTransport struct {
 	TransportBase
 	udpSrv            net.PacketConn
 	readyReadDataChan chan UdpReadyReadEvent
 	peerIP            string
 	localIP           string
+	port              int
+	peerAddr          net.Addr
 }
 
-func NewDiectUdpTransport() *DirectUdpTransport {
-	tp := &DirectUdpTransport{}
+func NewDirectUdpTransport() *DirectUdpTransport {
+	tp := newDirectUdpTransport()
 	obip := getOutboundIp()
 	if !isReservedIpStr(obip) {
 		tp.enable = true
@@ -44,11 +52,14 @@ func NewDiectUdpTransport() *DirectUdpTransport {
 
 	tp.server = true
 	tp.localIP = obip
+
+	tp.init()
+	go tp.serve()
 	return tp
 }
 
-func NewDiectUdpTransportClient(srvip string) *DirectUdpTransport {
-	tp := &DirectUdpTransport{}
+func NewDirectUdpTransportClient(srvip string) *DirectUdpTransport {
+	tp := newDirectUdpTransport()
 	obip := srvip
 	if !isReservedIpStr(obip) {
 		tp.enable = true
@@ -57,6 +68,15 @@ func NewDiectUdpTransportClient(srvip string) *DirectUdpTransport {
 	tp.server = false
 	tp.peerIP = srvip
 	tp.localIP = getOutboundIp()
+
+	tp.init()
+	go tp.serve()
+	return tp
+}
+
+func newDirectUdpTransport() *DirectUdpTransport {
+	tp := &DirectUdpTransport{}
+	tp.lossy = true
 	return tp
 }
 
@@ -72,13 +92,28 @@ func (this *DirectUdpTransport) init() bool {
 	}
 }
 
+func (this *DirectUdpTransport) localVirtAddr() string {
+	return this.localVirtAddr_
+}
+
 func (this *DirectUdpTransport) initServer() bool {
-	udpSrv, err := net.ListenPacket("udp", ":18588")
-	if err != nil {
-		log.Fatalln(err, udpSrv)
+	log.Println(ldebugp)
+	for i := 0; i < 256; i++ {
+		addr := fmt.Sprintf(":%d", 18588+i)
+		udpSrv, err := net.ListenPacket("udp", addr)
+		if err != nil {
+			// log.Println(lerrorp, err, udpSrv)
+		} else {
+			log.Println(linfop, "Listen UDP:", udpSrv.LocalAddr().String())
+			this.udpSrv = udpSrv
+			this.port = 18588 + i
+			this.localVirtAddr_ = fmt.Sprintf("%s:%d", this.localIP, this.port)
+			break
+		}
 	}
-	log.Println(linfop, "Listen UDP:", this.udpSrv.LocalAddr().String())
-	this.udpSrv = udpSrv
+	if this.udpSrv == nil {
+		log.Fatalln("can not listen UDP port: (%d, %d)", 18588, 18588+256)
+	}
 	return true
 }
 
@@ -88,6 +123,7 @@ func (this *DirectUdpTransport) initClient() bool {
 }
 
 func (this *DirectUdpTransport) serve() {
+	log.Println(ldebugp, this.localIP, this.peerIP)
 	if this.server {
 		this.serveServer()
 	} else {
@@ -107,8 +143,10 @@ func (this *DirectUdpTransport) serveServer() {
 		if err != nil {
 			log.Println(lerrorp, rdn, addr, err)
 		} else {
+			this.peerAddr = addr
 			evt := UdpReadyReadEvent{addr, buf[0:rdn], rdn}
 			this.readyReadNoticeChan <- CommonEvent{reflect.TypeOf(evt), reflect.ValueOf(evt)}
+			log.Println(ldebugp, "net->udp:", rdn, addr.String())
 		}
 	}
 }
@@ -122,11 +160,11 @@ func (this *DirectUdpTransport) serveClient() {
 
 }
 
-func (this *DirectUdpTransport) getReadyReadDataChanType() reflect.Type {
+func (this *DirectUdpTransport) getReadyReadChanType() reflect.Type {
 	return this.readyReadDataChanType
 }
 
-func (this *DirectUdpTransport) getReadyReadChannel() chan CommonEvent {
+func (this *DirectUdpTransport) getReadyReadChan() <-chan CommonEvent {
 	return this.readyReadNoticeChan
 }
 
@@ -134,25 +172,39 @@ func (this *DirectUdpTransport) getConn() interface{} {
 	return nil
 }
 
-func (this *DirectUdpTransport) sendData(buf []byte, size int, uaddr net.Addr) int {
+func (this *DirectUdpTransport) sendDataBytes(buf []byte, size int, uaddr string) int {
 	if this.server {
 		return this.sendDataServer(buf, size, uaddr)
 	} else {
-		return this.sendDataClient(buf, size)
+		return this.sendDataClient(buf, size, uaddr)
 	}
 }
+func (this *DirectUdpTransport) sendData(buf string, toaddr string) error {
+	if this.server {
+		this.sendDataServer([]byte(buf), len(buf), toaddr)
+	} else {
+		this.sendDataClient([]byte(buf), len(buf), toaddr)
+	}
+	return nil
+}
 
-func (this *DirectUdpTransport) sendDataServer(buf []byte, size int, uaddr net.Addr) int {
-	wrn, err := this.udpSrv.WriteTo(buf[:size], uaddr)
+func (this *DirectUdpTransport) sendDataServer(buf []byte, size int, uaddr string) int {
+	// unused(uaddr) // we don't use passed uaddr
+	if this.peerAddr == nil {
+		log.Println(lwarningp, "still not got the peerAddr")
+		return -1
+	}
+	wrn, err := this.udpSrv.WriteTo(buf[:size], this.peerAddr)
 	if err != nil {
 		log.Println(lerrorp, err, wrn)
+	} else {
+		log.Println(ldebugp, "udp->net:", wrn)
 	}
 	return wrn
 }
 
-func (this *DirectUdpTransport) sendDataClient(buf []byte, size int) int {
-	outboundip := this.peerIP
-	uaddr, err := net.ResolveUDPAddr("udp", outboundip)
+func (this *DirectUdpTransport) sendDataClient(buf []byte, size int, toaddr string) int {
+	uaddr, err := net.ResolveUDPAddr("udp", toaddr)
 	if err != nil {
 		log.Println(lerrorp, err, uaddr)
 	}
