@@ -20,6 +20,7 @@ func NewToxLossyTransport(t *tox.Tox) *ToxLossyTransport {
 		log.Println(t)
 	}
 	this := &ToxLossyTransport{}
+	this.name = "toxlossy"
 	this.lossy = true
 	this.tox = t
 	this.chdata = make(chan CommonEvent, mpcsz)

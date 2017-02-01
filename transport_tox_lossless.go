@@ -19,6 +19,7 @@ func NewToxLosslessTransport(t *tox.Tox) *ToxLosslessTransport {
 		log.Println(t)
 	}
 	this := &ToxLosslessTransport{}
+	this.name = "toxlossless"
 	this.tox = t
 	this.lossy = false
 

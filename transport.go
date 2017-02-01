@@ -12,8 +12,9 @@ import (
 不负责丢包处理功能。(kcp transport 除外)
 */
 type TransportBase struct {
-	enable                bool
-	server                bool // 是否是server模式
+	name                  string
+	enabled               bool
+	isServer              bool // 是否是server模式
 	weight                int  // 传输包时的权重
 	lossy                 bool
 	readyReadNoticeChan   chan CommonEvent // 无数据
@@ -47,10 +48,10 @@ func NewDirectUdpTransport() *DirectUdpTransport {
 	tp := newDirectUdpTransport()
 	obip := getOutboundIp()
 	if !isReservedIpStr(obip) {
-		tp.enable = true
+		tp.enabled = true
 	}
 
-	tp.server = true
+	tp.isServer = true
 	tp.localIP = obip
 
 	tp.init()
@@ -62,10 +63,10 @@ func NewDirectUdpTransportClient(srvip string) *DirectUdpTransport {
 	tp := newDirectUdpTransport()
 	obip := srvip
 	if !isReservedIpStr(obip) {
-		tp.enable = true
+		tp.enabled = true
 	}
 
-	tp.server = false
+	tp.isServer = false
 	tp.peerIP = srvip
 	tp.localIP = getOutboundIp()
 
@@ -76,6 +77,7 @@ func NewDirectUdpTransportClient(srvip string) *DirectUdpTransport {
 
 func newDirectUdpTransport() *DirectUdpTransport {
 	tp := &DirectUdpTransport{}
+	tp.name = "udp"
 	tp.lossy = true
 	return tp
 }
@@ -85,7 +87,7 @@ func (this *DirectUdpTransport) init() bool {
 	// this.readyReadDataChan = make(chan UdpReadyReadEvent, mpcsz)
 	this.readyReadDataChanType = reflect.TypeOf(this.readyReadNoticeChan)
 
-	if this.server {
+	if this.isServer {
 		return this.initServer()
 	} else {
 		return this.initServer()
@@ -124,7 +126,7 @@ func (this *DirectUdpTransport) initClient() bool {
 
 func (this *DirectUdpTransport) serve() {
 	log.Println(ldebugp, this.localIP, this.peerIP)
-	if this.server {
+	if this.isServer {
 		this.serveServer()
 	} else {
 		this.serveServer()
@@ -173,14 +175,14 @@ func (this *DirectUdpTransport) getConn() interface{} {
 }
 
 func (this *DirectUdpTransport) sendDataBytes(buf []byte, size int, uaddr string) int {
-	if this.server {
+	if this.isServer {
 		return this.sendDataServer(buf, size, uaddr)
 	} else {
 		return this.sendDataClient(buf, size, uaddr)
 	}
 }
 func (this *DirectUdpTransport) sendData(buf string, toaddr string) error {
-	if this.server {
+	if this.isServer {
 		this.sendDataServer([]byte(buf), len(buf), toaddr)
 	} else {
 		this.sendDataClient([]byte(buf), len(buf), toaddr)

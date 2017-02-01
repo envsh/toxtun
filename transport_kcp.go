@@ -31,8 +31,9 @@ func NewKcpTransport(t *tox.Tox, ch *Channel, server bool) *KcpTransport {
 		log.Println(1)
 	}
 	this := &KcpTransport{}
+	this.name = "kcp"
 	this.ch = ch
-	this.server = server
+	this.isServer = server
 
 	this.tp = NewToxLossyTransport(t)
 	if server {
@@ -106,7 +107,7 @@ func (this *KcpTransport) sendData(data string, to string) error {
 		log.Println(lerrorp, n)
 		return anyerror(n)
 	case n == 0: // ok
-		if this.server {
+		if this.isServer {
 			log.Println(ldebugp, "srv->kcp:", len(data))
 		} else {
 			log.Println(ldebugp, "cli->kcp:", len(data))
@@ -273,7 +274,7 @@ func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
 		if err != nil {
 			log.Println(lerrorp, err)
 		}
-		if this.server {
+		if this.isServer {
 			log.Println(ldebugp, "kcp->srv:", wn)
 		} else {
 			log.Println(ldebugp, "kcp->cli:", wn)

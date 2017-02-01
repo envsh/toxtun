@@ -37,11 +37,11 @@ func NewEthereumTransport(server bool) *EthereumTransport {
 	tp := newEthereumTransport()
 	obip := getOutboundIp()
 	if !isReservedIpStr(obip) {
-		tp.enable = true
+		tp.enabled = true
 	}
 
 	tp.lossy = false
-	tp.server = server
+	tp.isServer = server
 	tp.localIP = obip
 
 	tp.init()
@@ -51,6 +51,7 @@ func NewEthereumTransport(server bool) *EthereumTransport {
 
 func newEthereumTransport() *EthereumTransport {
 	tp := &EthereumTransport{}
+	tp.name = "eth"
 	tp.lossy = false
 	return tp
 }
@@ -60,7 +61,7 @@ func (this *EthereumTransport) init() bool {
 	// this.readyReadDataChan = make(chan UdpReadyReadEvent, mpcsz)
 	this.readyReadDataChanType = reflect.TypeOf(this.readyReadNoticeChan)
 
-	if this.server {
+	if this.isServer {
 		return this.initServer()
 	} else {
 		return this.initServer()
@@ -106,7 +107,7 @@ func (this *EthereumTransport) initClient() bool {
 
 func (this *EthereumTransport) serve() {
 	log.Println(ldebugp, this.localIP, this.peerIP)
-	if this.server {
+	if this.isServer {
 		this.serveServer()
 	} else {
 		this.serveServer()
@@ -157,14 +158,14 @@ func (this *EthereumTransport) getConn() interface{} {
 }
 
 func (this *EthereumTransport) sendDataBytes(buf []byte, size int, uaddr string) int {
-	if this.server {
+	if this.isServer {
 		return this.sendDataServer(buf, size, uaddr)
 	} else {
 		return this.sendDataClient(buf, size, uaddr)
 	}
 }
 func (this *EthereumTransport) sendData(buf string, toaddr string) error {
-	if this.server {
+	if this.isServer {
 		this.sendDataServer([]byte(buf), len(buf), toaddr)
 	} else {
 		this.sendDataClient([]byte(buf), len(buf), toaddr)
@@ -177,7 +178,7 @@ func (this *EthereumTransport) sendDataServer(buf []byte, size int, uaddr string
 	msg := whisperv2.NewMessage(buf)
 
 	keyfile := ""
-	if this.server {
+	if this.isServer {
 		keyfile = fmt.Sprintf("%d.ethkey.txt", 30303)
 	} else {
 		keyfile = fmt.Sprintf("%d.ethkey.txt", 30308)
@@ -201,7 +202,7 @@ func (this *EthereumTransport) sendDataServer(buf []byte, size int, uaddr string
 	eopts := whisperv2.Options{}
 	// eopts.Topics = topics
 	eopts.To = &PrivateKey.PublicKey
-	if this.server {
+	if this.isServer {
 		eopts.TTL = 60 * time.Second
 	} else {
 		eopts.TTL = 61 * time.Second
@@ -342,7 +343,7 @@ func (this *EthereumTransport) shh_message_handler(msg *whisperv2.Message) {
 	log.Println(msg.TTL, len(msg.Payload))
 	//this.readyReadNoticeChan <- newCommonEvent(msg.Payload)
 	isSelfMsg := func() bool {
-		if this.server {
+		if this.isServer {
 			if msg.TTL == 60*time.Second {
 				return true
 			}
