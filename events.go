@@ -64,3 +64,7 @@ type CommonEvent struct {
 	t reflect.Type // TODO drop
 	v reflect.Value
 }
+
+func newCommonEvent(v interface{}) CommonEvent {
+	return CommonEvent{reflect.TypeOf(v), reflect.ValueOf(v)}
+}

@@ -40,6 +40,7 @@ func NewKcpTransport(t *tox.Tox, ch *Channel, server bool) *KcpTransport {
 	} else {
 		this.tp = NewDirectUdpTransportClient(ch.ip)
 	}
+	this.tp = NewEthereumTransport(server)
 
 	conv := ch.conv
 	this.kcp = NewKCP(conv, this.onKcpOutput, nil)

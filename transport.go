@@ -35,12 +35,12 @@ type Transport interface {
 // TODO only port mode
 type DirectUdpTransport struct {
 	TransportBase
-	udpSrv            net.PacketConn
-	readyReadDataChan chan UdpReadyReadEvent
-	peerIP            string
-	localIP           string
-	port              int
-	peerAddr          net.Addr
+	udpSrv net.PacketConn
+	// readyReadDataChan chan UdpReadyReadEvent
+	peerIP   string
+	localIP  string
+	port     int
+	peerAddr net.Addr
 }
 
 func NewDirectUdpTransport() *DirectUdpTransport {
@@ -82,8 +82,8 @@ func newDirectUdpTransport() *DirectUdpTransport {
 
 func (this *DirectUdpTransport) init() bool {
 	this.readyReadNoticeChan = make(chan CommonEvent, mpcsz)
-	this.readyReadDataChan = make(chan UdpReadyReadEvent, mpcsz)
-	this.readyReadDataChanType = reflect.TypeOf(this.readyReadDataChan)
+	// this.readyReadDataChan = make(chan UdpReadyReadEvent, mpcsz)
+	this.readyReadDataChanType = reflect.TypeOf(this.readyReadNoticeChan)
 
 	if this.server {
 		return this.initServer()
@@ -145,7 +145,7 @@ func (this *DirectUdpTransport) serveServer() {
 		} else {
 			this.peerAddr = addr
 			evt := UdpReadyReadEvent{addr, buf[0:rdn], rdn}
-			this.readyReadNoticeChan <- CommonEvent{reflect.TypeOf(evt), reflect.ValueOf(evt)}
+			this.readyReadNoticeChan <- newCommonEvent(evt)
 			log.Println(ldebugp, "net->udp:", rdn, addr.String())
 		}
 	}
