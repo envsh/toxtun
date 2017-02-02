@@ -24,9 +24,11 @@ type KcpTransport struct {
 	kcpPollChan       chan KcpPollEvent
 	kcpNextUpdateWait int
 	kcpCheckCloseChan chan KcpCheckCloseEvent
+
+	InputChan chan CommonEvent // for skip lock
 }
 
-func NewKcpTransport(t *tox.Tox, ch *Channel, server bool) *KcpTransport {
+func NewKcpTransport(t *tox.Tox, ch *Channel, server bool, tp Transport) *KcpTransport {
 	if false {
 		log.Println(1)
 	}
@@ -35,13 +37,17 @@ func NewKcpTransport(t *tox.Tox, ch *Channel, server bool) *KcpTransport {
 	this.ch = ch
 	this.isServer = server
 
-	this.tp = NewToxLossyTransport(t)
-	if server {
-		this.tp = NewDirectUdpTransport()
+	if false {
+		this.tp = NewToxLossyTransport(t)
+		if server {
+			this.tp = NewDirectUdpTransport()
+		} else {
+			this.tp = NewDirectUdpTransportClient(ch.ip)
+		}
+		this.tp = NewEthereumTransport(server)
 	} else {
-		this.tp = NewDirectUdpTransportClient(ch.ip)
+		this.tp = tp
 	}
-	this.tp = NewEthereumTransport(server)
 
 	conv := ch.conv
 	this.kcp = NewKCP(conv, this.onKcpOutput, nil)
@@ -53,6 +59,8 @@ func NewKcpTransport(t *tox.Tox, ch *Channel, server bool) *KcpTransport {
 
 	this.kcpPollChan = make(chan KcpPollEvent, mpcsz)
 	this.kcpCheckCloseChan = make(chan KcpCheckCloseEvent, mpcsz)
+
+	this.InputChan = make(chan CommonEvent, mpcsz)
 
 	go this.serve()
 	return this
@@ -87,6 +95,8 @@ func (this *KcpTransport) serve() {
 		case evt := <-this.tp.getReadyReadChan():
 			this.processSubTransport(evt)
 			// processSubTransport
+		case evt := <-this.InputChan:
+			this.processSubTransport(evt)
 		}
 	}
 	log.Println(linfop)
@@ -292,6 +302,9 @@ func (this *KcpTransport) processSubTransport(evt CommonEvent) {
 	switch {
 	case n < 0:
 		log.Println(ldebugp, n, sz, x)
+		switch n {
+		case -10: // convid not match
+		}
 	case n == 0: // ok
 		log.Println(ldebugp, "tox->kcp:", len(data))
 	}

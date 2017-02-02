@@ -28,6 +28,7 @@ type Tunneld struct {
 	channelGCChan       chan ChannelGCEvent
 
 	// multipath-udp
+	grouptp *TransportGroup
 }
 
 func NewTunneld() *Tunneld {
@@ -46,6 +47,7 @@ func NewTunneld() *Tunneld {
 	// t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
 
 	// multipath-udp
+	this.grouptp = NewTransportGroup(t, true, this.chpool)
 	return this
 }
 
@@ -285,12 +287,14 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 		log.Println("maybe not command, just normal message")
 	} else {
 		if pkt.command == CMDCONNSYN {
+			log.Println(ldebugp, friendNumber, len(message), gopp.StrSuf(message, 252))
 			ch := NewChannelWithId(pkt.chidcli)
 			ch.conv = this.makeKcpConv(friendId, pkt)
 			ch.ip = pkt.remoteip
 			ch.port = pkt.remoteport
 			ch.toxid = friendId
-			ch.tp = NewKcpTransport(this.tox, ch, true)
+			ch.peerVirtAddr = pkt.data
+			ch.tp = NewKcpTransport(this.tox, ch, true, this.grouptp)
 			/*
 				ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 				ch.kcp.SetMtu(tunmtu)
@@ -302,6 +306,7 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			go this.connectToBackend(ch)
 
 		} else if pkt.command == CMDCLOSEFIN {
+			log.Println(ldebugp, friendNumber, len(message), gopp.StrSuf(message, 252))
 			if ch, ok := this.chpool.pool2[pkt.conv]; ok {
 				log.Println("recv client close fin,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 				ch.client_socket_close = true

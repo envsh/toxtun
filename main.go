@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"runtime/pprof"
+	"syscall"
 
 	"github.com/kitech/colog"
 )
@@ -22,6 +25,7 @@ var (
 	config_file string // = "toxtun_whtun.ini"
 	config      *TunnelConfig
 	log_level   int = int(colog.LDebug)
+	cpuprofile  string
 )
 
 const (
@@ -51,6 +55,7 @@ func init() {
 	flag.StringVar(&config_file, "config", "", "config file .ini")
 	flag.IntVar(&log_level, "log-level", int(colog.LDebug),
 		fmt.Sprintf("%d - %d, default %d\n", colog.LTrace, colog.LAlert, colog.LDebug))
+	flag.StringVar(&cpuprofile, "pprof", cpuprofile, "enable CPU pprof")
 }
 
 func main() {
@@ -67,6 +72,15 @@ func main() {
 		inst_mode = argv[argc-1]
 	}
 
+	if cpuprofile != "" {
+		f, err := os.Create(cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
 	go NewStatServer().serve()
 	appevt.Trigger("appmode", inst_mode)
 
@@ -78,13 +92,28 @@ func main() {
 			os.Exit(-1)
 		}
 		tc := NewTunnelc()
-		tc.serve()
+		go tc.serve()
 	case "server":
 		td := NewTunneld()
-		td.serve()
+		go td.serve()
 	default:
 		log.Println("Invalid mode:", inst_mode, ", server/client.")
 		flag.PrintDefaults()
 	}
 
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+
+	for {
+		select {
+		case s := <-c:
+			switch s {
+			case syscall.SIGINT:
+				log.Println("exiting...", s)
+				os.Exit(0)
+			default:
+				log.Println("unprocessed signal:", s)
+			}
+		}
+	}
 }

@@ -21,9 +21,10 @@ var (
 )
 
 type Tunnelc struct {
-	tox    *tox.Tox
-	srv    net.Listener
-	chpool *ChannelPool
+	tox     *tox.Tox
+	srv     net.Listener
+	chpool  *ChannelPool
+	grouptp *TransportGroup
 
 	toxPollChan         chan ToxPollEvent
 	kcpPollChan         chan KcpPollEvent
@@ -50,6 +51,7 @@ func NewTunnelc() *Tunnelc {
 	// t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
 	// t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
 
+	this.grouptp = NewTransportGroup(t, false, this.chpool)
 	return this
 }
 
@@ -129,6 +131,7 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 
 	toxtunid := config.recs[0].rpubkey
 	pkt := ch.makeConnectSYNPacket()
+	pkt.data = this.grouptp.localVirtAddr()
 	_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
 
 	if err != nil {
@@ -384,7 +387,7 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				ch.chidsrv = pkt.chidsrv
 				ch.toxid = config.recs[0].rpubkey
 				ch.peerVirtAddr = pkt.data
-				ch.tp = NewKcpTransport(this.tox, ch, false)
+				ch.tp = NewKcpTransport(this.tox, ch, false, this.grouptp)
 				/*
 					ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 					ch.kcp.SetMtu(tunmtu)

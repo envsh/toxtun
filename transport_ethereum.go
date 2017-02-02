@@ -287,6 +287,7 @@ func (this *EthereumTransport) newEthereumChatServer() (*whisperv2.Whisper, *p2p
 	cfg.MaxPendingPeers = 16
 	cfg.ListenAddr = ":30305"
 	cfg.ListenAddr = fmt.Sprintf(":%d", eport)
+	cfg.DiscoveryV5Addr = fmt.Sprintf(":%d", eport) // if empty, default 30303, multiple instance
 	// cfg.NodeDatabase = "./vardb/"
 	cfg.Protocols = whs.Protocols()
 	cfg.NAT = nat.Any()
@@ -311,6 +312,10 @@ func (this *EthereumTransport) newEthereumChatServer() (*whisperv2.Whisper, *p2p
 	log.Println(err, srv.Self().String(), crypto.PubkeyToAddress(cfg.PrivateKey.PublicKey).Hex())
 	// pubkey hex: server:20308: 0x6a574c29241690b4841cc6ed02f96bf1eff6a61d
 	// pubkey hex: client:30303: 0x4e39b37c40dd037ebd7dbf97ac14bb7adac84911
+
+	// TODO sometime discover/udp info line lost, maybe port conflict
+	// I0202 14:09:23.111016 p2p/nat/nat.go:111] mapped network port udp:30303 -> 30303 (ethereum discovery) using UPNP IGDv1-IP1
+	// I0202 14:09:23.117112 p2p/nat/nat.go:111] mapped network port tcp:30303 -> 30303 (ethereum p2p) using UPNP IGDv1-IP1
 
 	err = whs.Start(&srv)
 	if err != nil {

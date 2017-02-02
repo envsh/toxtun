@@ -38,10 +38,10 @@ type DirectUdpTransport struct {
 	TransportBase
 	udpSrv net.PacketConn
 	// readyReadDataChan chan UdpReadyReadEvent
-	peerIP   string
-	localIP  string
-	port     int
-	peerAddr net.Addr
+	peerIP  string
+	localIP string
+	port    int
+	// peerAddr net.Addr
 }
 
 func NewDirectUdpTransport() *DirectUdpTransport {
@@ -61,9 +61,14 @@ func NewDirectUdpTransport() *DirectUdpTransport {
 
 func NewDirectUdpTransportClient(srvip string) *DirectUdpTransport {
 	tp := newDirectUdpTransport()
-	obip := srvip
-	if !isReservedIpStr(obip) {
-		tp.enabled = true
+	if srvip != "" {
+		obip := srvip
+		if !isReservedIpStr(obip) {
+			tp.enabled = true
+		}
+	} else {
+		// TODO
+		log.Println(lwarningp, "not supply srvip")
 	}
 
 	tp.isServer = false
@@ -145,7 +150,7 @@ func (this *DirectUdpTransport) serveServer() {
 		if err != nil {
 			log.Println(lerrorp, rdn, addr, err)
 		} else {
-			this.peerAddr = addr
+			// this.peerAddr = addr
 			evt := UdpReadyReadEvent{addr, buf[0:rdn], rdn}
 			this.readyReadNoticeChan <- newCommonEvent(evt)
 			log.Println(ldebugp, "net->udp:", rdn, addr.String())
@@ -192,11 +197,20 @@ func (this *DirectUdpTransport) sendData(buf string, toaddr string) error {
 
 func (this *DirectUdpTransport) sendDataServer(buf []byte, size int, uaddr string) int {
 	// unused(uaddr) // we don't use passed uaddr
-	if this.peerAddr == nil {
-		log.Println(lwarningp, "still not got the peerAddr")
+	/*
+		if this.peerAddr == nil {
+			log.Println(lwarningp, "still not got the peerAddr")
+			return -1
+		}
+	*/
+	peerAddr, err := net.ResolveUDPAddr("udp", uaddr)
+	if err != nil {
+		log.Println(lerrorp, err, uaddr, peerAddr)
 		return -1
 	}
-	wrn, err := this.udpSrv.WriteTo(buf[:size], this.peerAddr)
+
+	// wrn, err := this.udpSrv.WriteTo(buf[:size], this.peerAddr)
+	wrn, err := this.udpSrv.WriteTo(buf[:size], peerAddr)
 	if err != nil {
 		log.Println(lerrorp, err, wrn)
 	} else {
@@ -208,7 +222,8 @@ func (this *DirectUdpTransport) sendDataServer(buf []byte, size int, uaddr strin
 func (this *DirectUdpTransport) sendDataClient(buf []byte, size int, toaddr string) int {
 	uaddr, err := net.ResolveUDPAddr("udp", toaddr)
 	if err != nil {
-		log.Println(lerrorp, err, uaddr)
+		log.Println(lerrorp, err, uaddr, toaddr)
+		return -1
 	}
 
 	// replace with? this.sendDataServer(buf, size, uaddr)

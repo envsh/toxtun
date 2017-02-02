@@ -24,6 +24,7 @@ func getOutboundIp() string {
 		aip := addr.(*net.IPNet).IP
 		if !aip.IsLoopback() && !isReservedIp(aip) {
 			// 现在还是需要排除IPv6
+			// TODO  还有zeronet的ip地址
 			if len(aip.String()) > len("255.255.255.255") {
 			} else {
 				return aip.String()
