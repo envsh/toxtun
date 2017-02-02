@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"reflect"
 	// "strings"
+	"crypto/ecdsa"
 	"strconv"
 	"time"
 
@@ -75,6 +77,7 @@ func (this *EthereumTransport) localVirtAddr() string {
 func (this *EthereumTransport) initServer() bool {
 	log.Println(ldebugp)
 	this.shh, this.srv = this.newEthereumChatServer()
+	this.localVirtAddr_ = base64.StdEncoding.EncodeToString(crypto.FromECDSAPub(&this.srv.PrivateKey.PublicKey))
 	if true {
 		return true
 	}
@@ -175,27 +178,18 @@ func (this *EthereumTransport) sendData(buf string, toaddr string) error {
 
 func (this *EthereumTransport) sendDataServer(buf []byte, size int, uaddr string) int {
 	// unused(uaddr) // we don't use passed uaddr
-	msg := whisperv2.NewMessage(buf)
-
-	keyfile := ""
-	if this.isServer {
-		keyfile = fmt.Sprintf("%d.ethkey.txt", 30303)
-	} else {
-		keyfile = fmt.Sprintf("%d.ethkey.txt", 30308)
-	}
-	// log.Println("loading...", keyfile)
-	PrivateKey, err := crypto.LoadECDSA(keyfile)
-	// msg.To = &PrivateKey.PublicKey
-	// log.Println(msg.To)
+	var peerPubkey *ecdsa.PublicKey
+	pubkeyBin, err := base64.StdEncoding.DecodeString(uaddr)
+	peerPubkey = crypto.ToECDSAPub(pubkeyBin)
 	if err != nil {
-		log.Println(err)
+		log.Println(lerrorp, err)
 	}
-	// log.Println(crypto.PubkeyToAddress(PrivateKey.PublicKey).Hex())
 
+	msg := whisperv2.NewMessage(buf)
 	var envel *whisperv2.Envelope
 	if false {
 		// topics := whisperv2.NewTopicsFromStrings("topic01", "topic02", "topic03")
-		msg.To = &PrivateKey.PublicKey
+		msg.To = peerPubkey
 		if this.isServer {
 			envel = whisperv2.NewEnvelope(60*time.Second, nil, msg)
 		} else {
@@ -208,7 +202,7 @@ func (this *EthereumTransport) sendDataServer(buf []byte, size int, uaddr string
 	if true {
 		eopts := whisperv2.Options{}
 		// eopts.Topics = topics
-		eopts.To = &PrivateKey.PublicKey
+		eopts.To = peerPubkey
 		if this.isServer {
 			eopts.TTL = 60 * time.Second
 		} else {
