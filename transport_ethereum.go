@@ -192,25 +192,37 @@ func (this *EthereumTransport) sendDataServer(buf []byte, size int, uaddr string
 	}
 	// log.Println(crypto.PubkeyToAddress(PrivateKey.PublicKey).Hex())
 
+	var envel *whisperv2.Envelope
 	if false {
-		topics := whisperv2.NewTopicsFromStrings("topic01", "topic02", "topic03")
-		envel := whisperv2.NewEnvelope(50*time.Second, topics, msg)
-		log.Println(envel)
+		// topics := whisperv2.NewTopicsFromStrings("topic01", "topic02", "topic03")
+		msg.To = &PrivateKey.PublicKey
+		if this.isServer {
+			envel = whisperv2.NewEnvelope(60*time.Second, nil, msg)
+		} else {
+			envel = whisperv2.NewEnvelope(61*time.Second, nil, msg)
+		}
+		// log.Println(envel)
 	}
 
 	// m2
-	eopts := whisperv2.Options{}
-	// eopts.Topics = topics
-	eopts.To = &PrivateKey.PublicKey
-	if this.isServer {
-		eopts.TTL = 60 * time.Second
-	} else {
-		eopts.TTL = 61 * time.Second
-	}
-	eopts.From = this.srv.PrivateKey
-	envel, err := msg.Wrap(whisperv2.DefaultPoW, eopts)
-	if err != nil {
-		log.Println(err)
+	if true {
+		eopts := whisperv2.Options{}
+		// eopts.Topics = topics
+		eopts.To = &PrivateKey.PublicKey
+		if this.isServer {
+			eopts.TTL = 60 * time.Second
+		} else {
+			eopts.TTL = 61 * time.Second
+		}
+		eopts.From = this.srv.PrivateKey
+		// whisperv2.DefaultPoW is for proof what?
+		// for default, Envelope.Seal use lot's CPU?
+		// envel, err = msg.Wrap(whisperv2.DefaultPoW, eopts)
+		// so use whisperv2.DefaultPoW*1/50 here
+		envel, err = msg.Wrap(1*time.Millisecond, eopts)
+		if err != nil {
+			log.Println(err)
+		}
 	}
 
 	err = this.shh.Send(envel)
