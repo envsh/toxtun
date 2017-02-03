@@ -323,6 +323,10 @@ func (this *EthereumTransport) newEthereumChatServer() (*whisperv2.Whisper, *p2p
 	// I0202 14:09:23.111016 p2p/nat/nat.go:111] mapped network port udp:30303 -> 30303 (ethereum discovery) using UPNP IGDv1-IP1
 	// I0202 14:09:23.117112 p2p/nat/nat.go:111] mapped network port tcp:30303 -> 30303 (ethereum p2p) using UPNP IGDv1-IP1
 
+	// hacked Whisper: 	self.keys[string(crypto.FromECDSAPub(&key.PublicKey))] = key
+	// do this, message handler should not receive self send message
+	whs.AddIdentity(srv.PrivateKey)
+
 	err = whs.Start(&srv)
 	if err != nil {
 		log.Println(err)
@@ -353,18 +357,6 @@ func (this *EthereumTransport) shh_message_handler(msg *whisperv2.Message) {
 	*/
 	log.Println(msg.TTL, len(msg.Payload))
 	//this.readyReadNoticeChan <- newCommonEvent(msg.Payload)
-	isSelfMsg := func() bool {
-		if this.isServer {
-			if msg.TTL == 60*time.Second {
-				return true
-			}
-		} else {
-			if msg.TTL == 61*time.Second {
-				return true
-			}
-		}
-		return false
-	}
 	isPrintable := func(s string) bool {
 		for _, c := range s {
 			if !strconv.IsPrint(rune(c)) {
@@ -375,9 +367,7 @@ func (this *EthereumTransport) shh_message_handler(msg *whisperv2.Message) {
 		return true
 	}
 
-	if isSelfMsg() {
-		log.Println(ldebugp, "myself msg")
-	} else {
+	if true {
 		// log.Println(msg.TTL, len(msg.Payload), string(msg.Payload), "/", msg.Hash.Str())
 		decbuf, err := crypto.Decrypt(this.srv.PrivateKey, msg.Payload)
 		if err != nil {
@@ -389,7 +379,7 @@ func (this *EthereumTransport) shh_message_handler(msg *whisperv2.Message) {
 
 			switch err {
 			case ecies.ErrInvalidMessage:
-			case ecies.ErrInvalidPublicKey:
+			case ecies.ErrInvalidPublicKey: // Payload isn't encrypted
 			default:
 			}
 		} else {
