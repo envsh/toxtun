@@ -158,7 +158,8 @@ func (this *KcpTransport) serveKcp() {
 	{
 		zbuf := make([]byte, 0)
 		kcp := this.kcp
-		kcp.Update(uint32(iclock2()))
+		// kcp.Update(uint32(iclock2()))
+		kcp.Update()
 
 		n := kcp.Recv(zbuf)
 		switch n {
@@ -298,7 +299,8 @@ func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
 func (this *KcpTransport) processSubTransport(evt CommonEvent) {
 	// s := evt.v.Interface().(string)
 	data, sz, x := this.tp.getEventData(evt)
-	n := this.kcp.Input(data)
+	// n := this.kcp.Input(data)
+	n := this.kcp.Input(data, true)
 	switch {
 	case n < 0:
 		log.Println(ldebugp, n, sz, x)
