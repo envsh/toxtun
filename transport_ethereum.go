@@ -53,7 +53,7 @@ func NewEthereumTransport(server bool) *EthereumTransport {
 
 func newEthereumTransport() *EthereumTransport {
 	tp := &EthereumTransport{}
-	tp.name = "eth"
+	tp.name_ = "eth"
 	tp.lossy = false
 	return tp
 }
@@ -73,6 +73,7 @@ func (this *EthereumTransport) init() bool {
 func (this *EthereumTransport) localVirtAddr() string {
 	return this.localVirtAddr_
 }
+func (this *EthereumTransport) name() string { return this.name_ }
 
 func (this *EthereumTransport) initServer() bool {
 	log.Println(ldebugp)

@@ -249,18 +249,19 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 			log.Println("chan read:", err, ch.chidcli, ch.chidsrv, ch.conv)
 			break
 		}
-		log.Println(linfop, n)
+		log.Println(linfop, n, ch.tp.sendBufferFull())
 
 		// 应用层控制kcp.WaitSnd()的大小
 		for {
 			// if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
-			sendbuf := gopp.BytesDup(rbuf[:n])
-			// this.processClientReadyRead(ch, rbuf, n)
-			this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
-			break
-			// } else {
-			//time.Sleep(3 * time.Millisecond)
-			// }
+			if !ch.tp.sendBufferFull() {
+				sendbuf := gopp.BytesDup(rbuf[:n])
+				// this.processClientReadyRead(ch, rbuf, n)
+				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
+				break
+			} else {
+				time.Sleep(3 * time.Millisecond)
+			}
 		}
 	}
 

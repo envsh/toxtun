@@ -12,7 +12,7 @@ import (
 不负责丢包处理功能。(kcp transport 除外)
 */
 type TransportBase struct {
-	name                  string
+	name_                 string
 	enabled               bool
 	isServer              bool // 是否是server模式
 	weight                int  // 传输包时的权重
@@ -23,6 +23,8 @@ type TransportBase struct {
 	// peerVirtAddr_         string // in Channel
 }
 
+func (this *TransportBase) sendBufferFull() bool { return false }
+
 type Transport interface {
 	init() bool
 	serve()
@@ -31,6 +33,8 @@ type Transport interface {
 	getEventData(evt CommonEvent) ([]byte, int, interface{})
 	sendData(data string, to string) error
 	localVirtAddr() string
+	name() string
+	sendBufferFull() bool
 }
 
 // TODO only port mode
@@ -82,7 +86,7 @@ func NewDirectUdpTransportClient(srvip string) *DirectUdpTransport {
 
 func newDirectUdpTransport() *DirectUdpTransport {
 	tp := &DirectUdpTransport{}
-	tp.name = "udp"
+	tp.name_ = "udp"
 	tp.lossy = true
 	return tp
 }
@@ -103,6 +107,9 @@ func (this *DirectUdpTransport) localVirtAddr() string {
 	return this.localVirtAddr_
 }
 
+func (this *DirectUdpTransport) name() string { return this.name_ }
+
+/////
 func (this *DirectUdpTransport) initServer() bool {
 	log.Println(ldebugp)
 	for i := 0; i < 256; i++ {
@@ -145,11 +152,14 @@ func (this *DirectUdpTransport) serveServer() {
 
 	stop := false
 	for !stop {
-		buf := make([]byte, 1600)
+		// transport 读取到的时编码后的长度, tunmtu*2
+		// 一般KCP.Input == -2
+		buf := make([]byte, 2345)
 		rdn, addr, err := this.udpSrv.ReadFrom(buf)
 		if err != nil {
 			log.Println(lerrorp, rdn, addr, err)
 		} else {
+			// TODO 发送太快的问题
 			// this.peerAddr = addr
 			evt := UdpReadyReadEvent{addr, buf[0:rdn], rdn}
 			this.readyReadNoticeChan <- newCommonEvent(evt)

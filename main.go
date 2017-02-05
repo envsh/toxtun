@@ -54,7 +54,7 @@ func init() {
 
 	flag.StringVar(&config_file, "config", "", "config file .ini")
 	flag.IntVar(&log_level, "log-level", int(colog.LDebug),
-		fmt.Sprintf("%d - %d, default %d\n", colog.LTrace, colog.LAlert, colog.LDebug))
+		fmt.Sprintf("%d - %d, ", colog.LTrace, colog.LAlert))
 	flag.StringVar(&cpuprofile, "pprof", cpuprofile, "enable CPU pprof")
 }
 
@@ -78,7 +78,10 @@ func main() {
 			log.Fatal(err)
 		}
 		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
+		defer func() {
+			log.Println("save profile")
+			pprof.StopCPUProfile()
+		}()
 	}
 
 	go NewStatServer().serve()
@@ -110,7 +113,8 @@ func main() {
 			switch s {
 			case syscall.SIGINT:
 				log.Println("exiting...", s)
-				os.Exit(0)
+				return
+				// os.Exit(0)
 			default:
 				log.Println("unprocessed signal:", s)
 			}

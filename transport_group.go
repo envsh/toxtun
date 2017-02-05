@@ -30,7 +30,7 @@ type TransportGroup struct {
 
 func NewTransportGroup(t *tox.Tox, server bool, chpool *ChannelPool) *TransportGroup {
 	this := &TransportGroup{}
-	this.name = "group"
+	this.name_ = "group"
 	this.t = t
 	this.isServer = server
 	this.tps = make([]Transport, 0)
@@ -99,6 +99,7 @@ func (this *TransportGroup) localVirtAddr() string {
 	log.Println(this.localVirtAddr_)
 	return this.localVirtAddr_
 }
+func (this *TransportGroup) name() string { return this.name_ }
 
 //////
 func (this *TransportGroup) initTransports() {
@@ -113,13 +114,13 @@ func (this *TransportGroup) initTransports() {
 		this.toxlosslesstp = NewToxLosslessTransport(this.t)
 		log.Panicln("not supported")
 	}
-	this.ethereumtp = NewEthereumTransport(this.isServer)
+	// this.ethereumtp = NewEthereumTransport(this.isServer)
 
 	//
 	this.tps = append(this.tps, this.udptp)
-	this.tps = append(this.tps, this.toxlossytp)
+	// this.tps = append(this.tps, this.toxlossytp)
 	// this.tps = append(this.tps, this.toxlosslesstp)
-	this.tps = append(this.tps, this.ethereumtp)
+	// this.tps = append(this.tps, this.ethereumtp)
 }
 
 func (this *TransportGroup) addChannel(ch *Channel) {
@@ -199,8 +200,8 @@ func (this *TransportGroup) PollForever() {
 			processTransportReadyRead(this.udptp, evt)
 		case evt := <-this.toxlossytp.getReadyReadChan():
 			processTransportReadyRead(this.toxlossytp, evt)
-		case evt := <-this.ethereumtp.getReadyReadChan():
-			processTransportReadyRead(this.ethereumtp, evt)
+			// case evt := <-this.ethereumtp.getReadyReadChan():
+			//	processTransportReadyRead(this.ethereumtp, evt)
 		}
 	}
 }

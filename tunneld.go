@@ -149,24 +149,25 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 			log.Println(lerrorp, err, ch.chidsrv, ch.chidsrv, ch.conv)
 			break
 		}
-
+		log.Println(ldebugp, ch.tp.sendBufferFull())
 		// 控制kcp.WaitSnd()的大小
 		for {
 			// if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
-			// this.processServerReadyRead(ch, rbuf, n)
-			sendbuf := gopp.BytesDup(rbuf[:n])
-			this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n}
-			break
-			// } else {
-			//	time.Sleep(3 * time.Millisecond)
-			// }
+			if !ch.tp.sendBufferFull() {
+				// this.processServerReadyRead(ch, rbuf, n)
+				sendbuf := gopp.BytesDup(rbuf[:n])
+				this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n}
+				break
+			} else {
+				time.Sleep(3 * time.Millisecond)
+			}
 		}
 	}
 
 	// 连接结束
 	log.Println(ldebugp, "connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
 	ch.server_socket_close = true
-	this.serverCloseChan <- ServerCloseEvent{ch}
+	this.serverCloseChan <- ServerCloseEvent{ch} // TODO  延迟结束
 	appevt.Trigger("connact", -1)
 }
 

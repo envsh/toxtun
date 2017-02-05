@@ -20,7 +20,7 @@ func NewToxLossyTransport(t *tox.Tox) *ToxLossyTransport {
 		log.Println(t)
 	}
 	this := &ToxLossyTransport{}
-	this.name = "toxlossy"
+	this.name_ = "toxlossy"
 	this.lossy = true
 	this.tox = t
 	this.chdata = make(chan CommonEvent, mpcsz)
@@ -59,6 +59,7 @@ func (this *ToxLossyTransport) sendData(data string, toxid string) error {
 func (this *ToxLossyTransport) localVirtAddr() string {
 	return this.localVirtAddr_
 }
+func (this *ToxLossyTransport) name() string { return this.name_ }
 
 /////
 func (this *ToxLossyTransport) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status int, userData interface{}) {

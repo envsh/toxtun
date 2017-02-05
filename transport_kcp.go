@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"fmt"
 	"log"
 	// "math"
 	"reflect"
@@ -26,6 +27,7 @@ type KcpTransport struct {
 	kcpCheckCloseChan chan KcpCheckCloseEvent
 
 	InputChan chan CommonEvent // for skip lock
+
 }
 
 func NewKcpTransport(t *tox.Tox, ch *Channel, server bool, tp Transport) *KcpTransport {
@@ -33,7 +35,7 @@ func NewKcpTransport(t *tox.Tox, ch *Channel, server bool, tp Transport) *KcpTra
 		log.Println(1)
 	}
 	this := &KcpTransport{}
-	this.name = "kcp"
+	this.name_ = "kcp"
 	this.ch = ch
 	this.isServer = server
 
@@ -53,9 +55,11 @@ func NewKcpTransport(t *tox.Tox, ch *Channel, server bool, tp Transport) *KcpTra
 	this.kcp = NewKCP(conv, this.onKcpOutput, nil)
 	this.kcp.SetMtu(tunmtu)
 	if kcp_mode == "fast" {
-		this.kcp.WndSize(128, 128)
+		wnsz := 128 // 32(default), 128
+		this.kcp.WndSize(wnsz, wnsz)
 		this.kcp.NoDelay(1, 10, 2, 1)
 	}
+	setKCPMode(1, this.kcp) // 0,1,2
 
 	this.kcpPollChan = make(chan KcpPollEvent, mpcsz)
 	this.kcpCheckCloseChan = make(chan KcpCheckCloseEvent, mpcsz)
@@ -74,7 +78,8 @@ func (this *KcpTransport) serve() {
 	stop := false
 	go func() {
 		for {
-			time.Sleep(2000 * time.Millisecond)
+			// time.Sleep(2000 * time.Millisecond)
+			time.Sleep(1 * time.Millisecond)
 			this.kcpPollChan <- KcpPollEvent{}
 			// this.serveKcp()
 		}
@@ -117,6 +122,7 @@ func (this *KcpTransport) sendData(data string, to string) error {
 		log.Println(lerrorp, n)
 		return anyerror(n)
 	case n == 0: // ok
+		// this.kcpPollChan <- KcpPollEvent{}
 		if this.isServer {
 			log.Println(ldebugp, "srv->kcp:", len(data))
 		} else {
@@ -126,9 +132,16 @@ func (this *KcpTransport) sendData(data string, to string) error {
 	}
 	return nil
 }
+func (this *KcpTransport) sendBufferFull() bool {
+	if uint32(this.kcp.WaitSnd()) > this.kcp.snd_wnd*5 {
+		return true
+	}
+	return false
+}
 func (this *KcpTransport) localVirtAddr() string {
 	return this.tp.localVirtAddr()
 }
+func (this *KcpTransport) name() string { return this.name_ }
 
 /////
 // TODO 计算kcpNextUpdateWait的逻辑优化
@@ -155,13 +168,16 @@ func kcp_poll(pool map[int]*Channel) (chks []*Channel, nxtss []uint32) {
 }
 
 func (this *KcpTransport) serveKcp() {
+	if this == nil {
+		log.Println(lerrorp, "already left")
+		return
+	}
 	{
-		zbuf := make([]byte, 0)
 		kcp := this.kcp
 		// kcp.Update(uint32(iclock2()))
 		kcp.Update()
 
-		n := kcp.Recv(zbuf)
+		n := kcp.Recv(nil)
 		switch n {
 		case -3: // available size  > 0
 			this.processKcpReadyRead(nil)
@@ -249,7 +265,8 @@ func (this *KcpTransport) onKcpOutput(buf []byte, size int, extra interface{}) {
 	if err != nil {
 		log.Println(lerrorp, err)
 	} else {
-		log.Println(ldebugp, "kcp->tox:", len(buf))
+		totpname := this.tp.name()
+		log.Println(ldebugp, fmt.Sprintf("kcp->%s:", totpname), size)
 	}
 
 }
@@ -271,6 +288,10 @@ func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
 	}
 
 	pkt := parsePacket(buf)
+	if pkt == nil {
+		log.Println(lerrorp, "packge broken")
+		return
+	}
 	if pkt.isconnack() {
 	} else if pkt.isdata() {
 		// ch := this.chpool.pool[pkt.chidsrv]
@@ -281,16 +302,21 @@ func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
 			log.Println(lerrorp, err)
 		}
 
-		wn, err := ch.conn.Write(buf)
-		if err != nil {
-			log.Println(lerrorp, err)
-		}
-		if this.isServer {
-			log.Println(ldebugp, "kcp->srv:", wn)
+		// 这么检测应该还是有可能crash
+		if ch.client_socket_close {
+			log.Println(lerrorp, "client socket is closed.", ch.conv)
 		} else {
-			log.Println(ldebugp, "kcp->cli:", wn)
+			wn, err := ch.conn.Write(buf) // crash here SIGPIPE
+			if err != nil {
+				log.Println(lerrorp, err)
+			}
+			if this.isServer {
+				log.Println(ldebugp, "kcp->srv:", wn)
+			} else {
+				log.Println(ldebugp, "kcp->cli:", wn)
+			}
+			appevt.Trigger("reqbytes", wn, len(buf)+25)
 		}
-		appevt.Trigger("reqbytes", wn, len(buf)+25)
 	} else {
 	}
 
@@ -303,12 +329,37 @@ func (this *KcpTransport) processSubTransport(evt CommonEvent) {
 	n := this.kcp.Input(data, true)
 	switch {
 	case n < 0:
-		log.Println(ldebugp, n, sz, x)
+		log.Println(lerrorp, n, sz, x)
 		switch n {
 		case -10: // convid not match
 		}
 	case n == 0: // ok
-		log.Println(ldebugp, "tox->kcp:", len(data))
+		// this.kcpPollChan <- KcpPollEvent{} // why slow down?
+		switch eval := evt.v.Interface().(type) {
+		case GroupReadyReadEvent:
+			fromtpname := eval.tp.name()
+			log.Println(ldebugp, fromtpname+"->kcp:", len(data))
+		default:
+			fromtpname := this.tp.name()
+			log.Println(ldebugp, fromtpname+"->kcp:", len(data))
+		}
+	}
+}
+
+func setKCPMode(mode int, kcp *KCP) {
+	if mode == 0 {
+		// 默认模式
+		kcp.NoDelay(0, 10, 0, 0)
+	} else if mode == 1 {
+		// 普通模式，关闭流控等
+		kcp.NoDelay(0, 10, 0, 1)
+	} else {
+		// 启动快速模式
+		// 第二个参数 nodelay-启用以后若干常规加速将启动
+		// 第三个参数 interval为内部处理时钟，默认设置为 10ms
+		// 第四个参数 resend为快速重传指标，设置为2
+		// 第五个参数 为是否禁用常规流控，这里禁止
+		kcp.NoDelay(1, 10, 2, 1)
 	}
 }
 
@@ -316,4 +367,15 @@ func (this *KcpTransport) processSubTransport(evt CommonEvent) {
 KCP的全双工:
 write: Send -> Output -> TP
 read: Input -> Recv -> TP
+
+server:
+socket(read) -> KCP(INPUT) -> APP(RECV)
+app(send) -> KCP(Send) ->socket(write)
+
+client:
+socket(read) -> KCP(INPUT) -> APP(RECV)
+app(send) -> KCP(Send) ->socket(write)
+
+capp  <-> cKCP <-> csocket <-> internet <-> ssocket <-> sKCP <-> sapp
+
 */
