@@ -10,6 +10,7 @@ import (
 	"net"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/kitech/go-toxcore"
 )
@@ -26,6 +27,9 @@ type TransportGroup struct {
 	tps    []Transport
 	chans  map[uint32]*Channel // chid/convid => Channel, for dispatch
 	chpool *ChannelPool
+
+	shutWG    sync.WaitGroup
+	quitPollC chan bool
 }
 
 func NewTransportGroup(t *tox.Tox, server bool, chpool *ChannelPool) *TransportGroup {
@@ -37,6 +41,7 @@ func NewTransportGroup(t *tox.Tox, server bool, chpool *ChannelPool) *TransportG
 	this.chans = make(map[uint32]*Channel)
 	this.chpool = NewChannelPool()
 	this.chpool = chpool
+	this.quitPollC = make(chan bool, 1)
 
 	this.init()
 	go this.serve()
@@ -52,6 +57,11 @@ func (this *TransportGroup) init() bool {
 func (this *TransportGroup) serve() {
 	this.PollForever()
 }
+func (this *TransportGroup) shutdown() {
+	this.quitPollC <- true
+	this.shutWG.Wait()
+}
+
 func (this *TransportGroup) getReadyReadChan() <-chan CommonEvent {
 	return this.readyReadNoticeChan
 }
@@ -99,7 +109,6 @@ func (this *TransportGroup) localVirtAddr() string {
 	log.Println(this.localVirtAddr_)
 	return this.localVirtAddr_
 }
-func (this *TransportGroup) name() string { return this.name_ }
 
 //////
 func (this *TransportGroup) initTransports() {
@@ -193,8 +202,8 @@ func (this *TransportGroup) PollForever() {
 		}
 	}
 
-	stop := false
-	for !stop {
+	this.shutWG.Add(1)
+	for {
 		select {
 		case evt := <-this.udptp.getReadyReadChan():
 			processTransportReadyRead(this.udptp, evt)
@@ -202,6 +211,11 @@ func (this *TransportGroup) PollForever() {
 			processTransportReadyRead(this.toxlossytp, evt)
 			// case evt := <-this.ethereumtp.getReadyReadChan():
 			//	processTransportReadyRead(this.ethereumtp, evt)
+		case <-this.quitPollC:
+			this.udptp.shutdown()
+			this.toxlossytp.shutdown()
+			this.shutWG.Done()
+			return
 		}
 	}
 }

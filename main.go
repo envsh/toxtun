@@ -47,8 +47,8 @@ func init() {
 		log.Println("error: ", 1)
 	*/
 
-	flag.StringVar(&kcp_mode, "kcp-mode", "fast", "default|fast")
-	if !(kcp_mode == "default" || kcp_mode == "fast") {
+	flag.StringVar(&kcp_mode, "kcp-mode", "fast", "default|noctrl|fast")
+	if !(kcp_mode == "default" || kcp_mode == "fast" || kcp_mode == "noctrl") {
 		kcp_mode = "fast"
 	}
 
@@ -113,11 +113,13 @@ func main() {
 			switch s {
 			case syscall.SIGINT:
 				log.Println("exiting...", s)
-				return
-				// os.Exit(0)
+				// os.Exit(0) // will not run defer
+				return // will run defer
 			default:
 				log.Println("unprocessed signal:", s)
 			}
 		}
 	}
+	// os.Exit 和 return main.main()的区别：
+	// 前者不会调用defer，后者会。
 }

@@ -6,6 +6,7 @@ import (
 	"log"
 	// "math"
 	"reflect"
+	"sync"
 	"time"
 
 	"gopp"
@@ -28,6 +29,9 @@ type KcpTransport struct {
 
 	InputChan chan CommonEvent // for skip lock
 
+	shutWG    sync.WaitGroup
+	quitTickC chan bool
+	quitCtrlC chan bool
 }
 
 func NewKcpTransport(t *tox.Tox, ch *Channel, server bool, tp Transport) *KcpTransport {
@@ -66,6 +70,9 @@ func NewKcpTransport(t *tox.Tox, ch *Channel, server bool, tp Transport) *KcpTra
 
 	this.InputChan = make(chan CommonEvent, mpcsz)
 
+	this.quitTickC = make(chan bool, 1)
+	this.quitCtrlC = make(chan bool, 1)
+
 	go this.serve()
 	return this
 }
@@ -75,25 +82,31 @@ func (this *KcpTransport) init() bool {
 }
 func (this *KcpTransport) serve() {
 	log.Println(ldebugp)
-	stop := false
 	go func() {
-		for {
-			// time.Sleep(2000 * time.Millisecond)
-			time.Sleep(1 * time.Millisecond)
-			this.kcpPollChan <- KcpPollEvent{}
-			// this.serveKcp()
-		}
-	}()
+		this.shutWG.Add(1)
+		// tickKcpPollC := time.Tick(2000 * time.Millisecond)
+		tickKcpPollC := time.Tick(200 * time.Millisecond)
+		// tickKcpPollC := time.Tick(20 * time.Millisecond)
+		// tickKcpPollC := time.Tick(2 * time.Millisecond)
+		tickKcpCheckC := time.Tick(1000 * time.Millisecond)
 
-	go func() {
 		for {
-			time.Sleep(1000 * time.Millisecond)
-			this.kcpCheckCloseChan <- KcpCheckCloseEvent{}
+			select {
+			case <-tickKcpPollC:
+				this.kcpPollChan <- KcpPollEvent{}
+				// this.serveKcp()
+			case <-tickKcpCheckC:
+				this.kcpCheckCloseChan <- KcpCheckCloseEvent{}
+			case <-this.quitTickC:
+				this.shutWG.Done()
+				return
+			}
 		}
 	}()
 
 	// like event handler
-	for !stop {
+	this.shutWG.Add(1)
+	for {
 		select {
 		case <-this.kcpPollChan:
 			this.serveKcp()
@@ -102,9 +115,28 @@ func (this *KcpTransport) serve() {
 			// processSubTransport
 		case evt := <-this.InputChan:
 			this.processSubTransport(evt)
+		case <-this.quitCtrlC:
+			goto end
 		}
 	}
-	log.Println(linfop)
+end:
+	log.Println(linfop, "ctrl routine finished")
+	this.shutWG.Done()
+}
+func (this *KcpTransport) shutdown() {
+	log.Println(ldebugp, "closing kcp transport...")
+	switch this.tp.(type) {
+	case *TransportGroup:
+	default:
+		this.tp.shutdown()
+	}
+
+	this.quitTickC <- true
+	this.quitCtrlC <- true
+
+	log.Println(linfop, "waiting sub goroutines finish...")
+	this.shutWG.Wait()
+	log.Println(linfop, "all sub goroutines finished.")
 }
 func (this *KcpTransport) getReadyReadChan() <-chan CommonEvent {
 	return nil
@@ -141,7 +173,6 @@ func (this *KcpTransport) sendBufferFull() bool {
 func (this *KcpTransport) localVirtAddr() string {
 	return this.tp.localVirtAddr()
 }
-func (this *KcpTransport) name() string { return this.name_ }
 
 /////
 // TODO 计算kcpNextUpdateWait的逻辑优化
@@ -345,6 +376,12 @@ func (this *KcpTransport) processSubTransport(evt CommonEvent) {
 		}
 	}
 }
+
+const (
+	kcp_mode_default = 0 // faketcp
+	kcp_mode_noctrl  = 1
+	kcp_mode_fast    = 2
+)
 
 func setKCPMode(mode int, kcp *KCP) {
 	if mode == 0 {

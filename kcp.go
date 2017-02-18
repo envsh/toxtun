@@ -181,7 +181,13 @@ func NewKCP(conv uint32, output Output, extra interface{}) *KCP {
 // newSegment creates a KCP segment
 func (kcp *KCP) newSegment(size int) *Segment {
 	seg := new(Segment)
-	seg.data = xmitBuf.Get().([]byte)[:size]
+	b := xmitBuf.Get().([]byte)
+	if cap(b) < size {
+		seg.data = make([]byte, size*2)
+	} else {
+		seg.data = b[:size]
+	}
+	// seg.data = xmitBuf.Get().([]byte)[:size]
 	return seg
 }
 
@@ -508,6 +514,7 @@ func (kcp *KCP) Input(data []byte, update_ack bool) int {
 		data = ikcp_decode32u(data, &una)
 		data = ikcp_decode32u(data, &length)
 		if len(data) < int(length) {
+			println(len(data), length) // 1576 1952
 			return -2
 		}
 

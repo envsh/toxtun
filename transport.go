@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"reflect"
+	"sync"
 )
 
 /*
@@ -23,7 +24,9 @@ type TransportBase struct {
 	// peerVirtAddr_         string // in Channel
 }
 
-func (this *TransportBase) sendBufferFull() bool { return false }
+func (this *TransportBase) name() string          { return this.name_ }
+func (this *TransportBase) localVirtAddr() string { return this.localVirtAddr_ }
+func (this *TransportBase) sendBufferFull() bool  { return false }
 
 type Transport interface {
 	init() bool
@@ -35,6 +38,7 @@ type Transport interface {
 	localVirtAddr() string
 	name() string
 	sendBufferFull() bool
+	shutdown()
 }
 
 // TODO only port mode
@@ -46,6 +50,8 @@ type DirectUdpTransport struct {
 	localIP string
 	port    int
 	// peerAddr net.Addr
+
+	shutWG sync.WaitGroup
 }
 
 func NewDirectUdpTransport() *DirectUdpTransport {
@@ -103,12 +109,6 @@ func (this *DirectUdpTransport) init() bool {
 	}
 }
 
-func (this *DirectUdpTransport) localVirtAddr() string {
-	return this.localVirtAddr_
-}
-
-func (this *DirectUdpTransport) name() string { return this.name_ }
-
 /////
 func (this *DirectUdpTransport) initServer() bool {
 	log.Println(ldebugp)
@@ -150,6 +150,7 @@ func (this *DirectUdpTransport) serveServer() {
 		log.Fatalln("not listen")
 	}
 
+	this.shutWG.Add(1)
 	stop := false
 	for !stop {
 		// transport 读取到的时编码后的长度, tunmtu*2
@@ -158,6 +159,7 @@ func (this *DirectUdpTransport) serveServer() {
 		rdn, addr, err := this.udpSrv.ReadFrom(buf)
 		if err != nil {
 			log.Println(lerrorp, rdn, addr, err)
+			break
 		} else {
 			// TODO 发送太快的问题
 			// this.peerAddr = addr
@@ -166,15 +168,21 @@ func (this *DirectUdpTransport) serveServer() {
 			log.Println(ldebugp, "net->udp:", rdn, addr.String())
 		}
 	}
+	this.shutWG.Done()
+}
+func (this *DirectUdpTransport) serveClient() {
+}
+
+func (this *DirectUdpTransport) shutdown() {
+	log.Println(ldebugp, "closing udp transport...")
+	this.udpSrv.Close()
+	this.shutWG.Wait()
+	log.Println(ldebugp, "closed udp transport.")
 }
 
 func (this *DirectUdpTransport) getEventData(evt CommonEvent) ([]byte, int, interface{}) {
 	devt := evt.v.Interface().(UdpReadyReadEvent)
 	return devt.buf, devt.size, devt.addr
-}
-
-func (this *DirectUdpTransport) serveClient() {
-
 }
 
 func (this *DirectUdpTransport) getReadyReadChanType() reflect.Type {

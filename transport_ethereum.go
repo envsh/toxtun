@@ -10,6 +10,7 @@ import (
 	// "strings"
 	"crypto/ecdsa"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -33,6 +34,8 @@ type EthereumTransport struct {
 	localIP  string
 	port     int
 	peerAddr net.Addr
+
+	shutWG sync.WaitGroup
 }
 
 func NewEthereumTransport(server bool) *EthereumTransport {
@@ -138,6 +141,13 @@ func (this *EthereumTransport) serveServer() {
 			}
 		}
 	*/
+}
+func (this *EthereumTransport) shutdown() {
+	err := this.shh.Stop()
+	if err != nil {
+		log.Println(err)
+	}
+	this.srv.Stop()
 }
 
 func (this *EthereumTransport) getEventData(evt CommonEvent) ([]byte, int, interface{}) {
@@ -259,7 +269,6 @@ func (this *EthereumTransport) sendDataClient(buf []byte, size int, toaddr strin
 			}
 			return wrn
 	*/
-	return 0
 }
 
 ////

@@ -40,6 +40,9 @@ func (this *ToxLossyTransport) init() bool {
 func (this *ToxLossyTransport) serve() {
 
 }
+func (this *ToxLossyTransport) shutdown() {
+	// nothing to do
+}
 func (this *ToxLossyTransport) getReadyReadChan() <-chan CommonEvent {
 	return this.chdata
 }
@@ -55,11 +58,6 @@ func (this *ToxLossyTransport) sendData(data string, toxid string) error {
 	err := this.FriendSendLossyPacket(toxid, msg)
 	return err
 }
-
-func (this *ToxLossyTransport) localVirtAddr() string {
-	return this.localVirtAddr_
-}
-func (this *ToxLossyTransport) name() string { return this.name_ }
 
 /////
 func (this *ToxLossyTransport) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status int, userData interface{}) {

@@ -213,6 +213,7 @@ func (this *Tunneld) promiseChannelClose(ch *Channel) {
 		ch.addCloseReason("both_close")
 		log.Println("both socket closed", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		this.chpool.rmServer(ch)
+		ch.tp.shutdown()
 		appevt.Trigger("closereason", ch.closeReason())
 	} else {
 		log.Println("what state:", ch.chidcli, ch.chidsrv, ch.conv,
