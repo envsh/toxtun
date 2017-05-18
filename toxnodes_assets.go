@@ -45,33 +45,16 @@ func (fi bindataFileInfo) Sys() interface{} {
 }
 
 var _toxnodesJson = []byte(`{
-    "last_scan": 1483542982,
-    "last_refresh": 1483542804,
+    "last_scan": 1495114700,
+    "last_refresh": 1495114461,
     "nodes": [
-        {
-            "ipv4": "tox.zodiaclabs.org",
-            "ipv6": "v6.tox.zodiaclabs.org",
-            "port": 33445,
-            "tcp_ports": [
-                3389,
-                33445
-            ],
-            "public_key": "A09162D68618E742FFBCA1C2C70385E6679604B2D80EA6E84AD0996A1AC8A074",
-            "maintainer": "stal",
-            "location": "US",
-            "status_udp": true,
-            "status_tcp": true,
-            "version": "2016010100",
-            "motd": "I am the bone of my code;\nNIH is my body and str8c is my blood.\nI have overflowed a thousand buffers.\nUnknown to SIGSEGV, nor to abort();\nHave withstood pain to create fast programs;\nYet my code will always be unsafe.\nSo as I pray, rock solid straight C.",
-            "last_ping": 1483542984
-        },
         {
             "ipv4": "biribiri.org",
             "ipv6": "-",
             "port": 33445,
             "tcp_ports": [
-                3389,
-                33445
+                33445,
+                3389
             ],
             "public_key": "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67",
             "maintainer": "nurupo",
@@ -79,25 +62,25 @@ var _toxnodesJson = []byte(`{
             "status_udp": true,
             "status_tcp": true,
             "version": "2016010100",
-            "motd": "Welcome, stranger #9261. I'm up for 5d 10h 07m 44s, running since Dec 30 05:08:37 UTC. If I get outdated, please ping my maintainer at nurupo.contributions@gmail.com",
-            "last_ping": 1483542984
+            "motd": "Welcome, stranger #9193. I'm up for 6d 09h 29m 55s, running since May 12 04:08:25 UTC. If I get outdated, please ping my maintainer at nurupo.contributions@gmail.com",
+            "last_ping": 1495114700
         },
         {
-            "ipv4": "178.62.250.138",
-            "ipv6": "2a03:b0c0:2:d0::16:1",
+            "ipv4": "nodes.tox.chat",
+            "ipv6": "-",
             "port": 33445,
             "tcp_ports": [
-                3389,
-                33445
+                33445,
+                3389
             ],
-            "public_key": "788236D34978D1D5BD822F0A5BEBD2C53C64CC31CD3149350EE27D4D9A2F9B6B",
+            "public_key": "6FC41E2BD381D37E9748FC0E0328CE086AF9598BECC8FEB7DDF2E440475F300E",
             "maintainer": "Impyy",
             "location": "NL",
             "status_udp": true,
             "status_tcp": true,
             "version": "2016010100",
-            "motd": "Impy's kickin' bootstrap node",
-            "last_ping": 1483542984
+            "motd": "Straps boots like no other",
+            "last_ping": 1495114700
         },
         {
             "ipv4": "130.133.110.14",
@@ -113,7 +96,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "Spline tox bootstrap node",
-            "last_ping": 1483542984
+            "last_ping": 1495114702
         },
         {
             "ipv4": "205.185.116.116",
@@ -130,7 +113,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2014101200",
             "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "198.98.51.198",
@@ -138,7 +121,6 @@ var _toxnodesJson = []byte(`{
             "port": 33445,
             "tcp_ports": [
                 33445,
-                443,
                 3389
             ],
             "public_key": "1D5A5F2F5D6233058BF0259B09622FB40B482E4FA0931EB8FD3AB8E7BF7DAF6F",
@@ -148,7 +130,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2014101200",
             "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "108.61.165.198",
@@ -164,15 +146,15 @@ var _toxnodesJson = []byte(`{
             "status_tcp": false,
             "version": "2016010100",
             "motd": "Ray's Tox Node",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "194.249.212.109",
             "ipv6": "2001:1470:fbfe::109",
             "port": 33445,
             "tcp_ports": [
-                3389,
-                33445
+                33445,
+                3389
             ],
             "public_key": "3CEE1F054081E7A011234883BC4FC39F661A55B73637A5AC293DDF1251D9432B",
             "maintainer": "fluke571",
@@ -181,7 +163,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114702
         },
         {
             "ipv4": "185.25.116.107",
@@ -198,24 +180,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "",
             "motd": "",
-            "last_ping": 1483542984
-        },
-        {
-            "ipv4": "192.99.168.140",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-                33445,
-                3389
-            ],
-            "public_key": "6A4D0607A296838434A6A7DDF99F50EF9D60A2C510BBF31FE538A25CB6B4652F",
-            "maintainer": "WIeschie",
-            "location": "CA",
-            "status_udp": true,
-            "status_tcp": true,
-            "version": "2014101200",
-            "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "5.189.176.217",
@@ -233,32 +198,33 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "",
             "motd": "",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
-            "ipv4": "148.251.23.146",
-            "ipv6": "2a01:4f8:201:8493::2",
+            "ipv4": "217.182.143.254",
+            "ipv6": "2001:41d0:302:1000::e111",
             "port": 2306,
             "tcp_ports": [
+                443,
                 2306,
                 33445
             ],
             "public_key": "7AED21F94D82B05774F697B209628CD5A9AD17E0C073D9329076A4C28ED28147",
             "maintainer": "pucetox",
-            "location": "DE",
+            "location": "FR",
             "status_udp": true,
             "status_tcp": true,
             "version": "2016010100",
-            "motd": "by pucetox,\n sync your nodes here tox.0x10k.com/bootstrapd-conf , \n for communication: 1D1C0B992DEB6D7F18561176F7F5E572BCC7F2BA5CFA7E9E437B9134122CE96D906A6119F9D2",
-            "last_ping": 1483542984
+            "motd": "by pucetox,\nipv4/ipv6 UDP:2306 TCP:21/80/443/2306/33445\nsync your nodes here tox.0x10k.com/bootstrapd-conf , \n for communication: 1D1C0B992DEB6D7F18561176F7F5E572BCC7F2BA5CFA7E9E437B9134122CE96D906A6119F9D2",
+            "last_ping": 1495114702
         },
         {
             "ipv4": "104.223.122.15",
             "ipv6": "2607:ff48:aa81:800::35eb:1",
             "port": 33445,
             "tcp_ports": [
-                33445,
-                3389
+                3389,
+                33445
             ],
             "public_key": "0FB96EEBFB1650DDB52E70CF773DDFCABE25A95CC3BB50FC251082E4B63EF82A",
             "maintainer": "ru_maniac",
@@ -266,8 +232,8 @@ var _toxnodesJson = []byte(`{
             "status_udp": true,
             "status_tcp": true,
             "version": "2016010100",
-            "motd": "built on: Sun Oct 2, 15:10:30 UTC+3\nplease note: running on iphy's fork!\nmore info on the matter: goo.gl/Gz5KhK & goo.gl/i2TZJr\n\ntox id for queries and general info: EBD2A7B649ABB10ED9F47E5113F04000F39D46F087CEB62FCCE1069471FD6915256D197F2A97",
-            "last_ping": 1483542984
+            "motd": "built on: Tue Feb 21st 2017, 10:52:30 UTC+3\nplease note: running on TokTox Toxcore!\nmore info on the matter: goo.gl/Gz5KhK & goo.gl/i2TZJr\n\ntox id for queries and general info: EBD2A7B649ABB10ED9F47E5113F04000F39D46F087CEB62FCCE1069471FD6915256D197F2A97",
+            "last_ping": 1495114700
         },
         {
             "ipv4": "tox.verdict.gg",
@@ -283,8 +249,8 @@ var _toxnodesJson = []byte(`{
             "status_udp": true,
             "status_tcp": true,
             "version": "2016010100",
-            "motd": "Since 2015",
-            "last_ping": 1483542984
+            "motd": "Praise The Sun!",
+            "last_ping": 1495114700
         },
         {
             "ipv4": "d4rk4.ru",
@@ -300,24 +266,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "TOX ID: 35EDC07AEB18B163E07EE33F6CDDA63969F394FF6A617CEAB22A7EBBEAAAF854C0EDFBD46898",
-            "last_ping": 1483542984
-        },
-        {
-            "ipv4": "81.4.110.149",
-            "ipv6": "2a00:d880:3:2::8bdc:f19",
-            "port": 33445,
-            "tcp_ports": [
-                33445,
-                3389
-            ],
-            "public_key": "9E7BD4793FFECA7F32238FA2361040C09025ED3333744483CA6F3039BFF0211E",
-            "maintainer": "tibietigni",
-            "location": "NL",
-            "status_udp": true,
-            "status_tcp": true,
-            "version": "2016010100",
-            "motd": "Tibietigni.com node. Tox_id for communication: D36CC0B702621F48FDBC540A57124A744E5133C932E65ACCEBCABF2586A02455171717175989",
-            "last_ping": 1483542984
+            "last_ping": 1495114702
         },
         {
             "ipv4": "104.233.104.126",
@@ -334,15 +283,15 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2014101200",
             "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "51.254.84.212",
             "ipv6": "2001:41d0:a:1a3b::18",
             "port": 33445,
             "tcp_ports": [
-                3389,
-                33445
+                33445,
+                3389
             ],
             "public_key": "AEC204B9A4501412D5F0BB67D9C81B5DB3EE6ADA64122D32A3E9B093D544327D",
             "maintainer": "a68366",
@@ -351,15 +300,15 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "Since 26.12.2015",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
-            "ipv4": "5.135.59.163",
+            "ipv4": "88.99.133.52",
             "ipv6": "-",
             "port": 33445,
             "tcp_ports": [
-                33445,
-                3389
+                3389,
+                33445
             ],
             "public_key": "2D320F971EF2CA18004416C2AAE7BA52BF7949DB34EA8E2E21AF67BD367BE211",
             "maintainer": "Skey",
@@ -368,15 +317,15 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2014101200",
             "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "185.58.206.164",
             "ipv6": "2a02:f680:1:1100::3313",
             "port": 33445,
             "tcp_ports": [
-                33445,
-                3389
+                3389,
+                33445
             ],
             "public_key": "24156472041E5F220D1FA11D9DF32F7AD697D59845701CDD7BE7D1785EB9DB39",
             "maintainer": "ru_maniac",
@@ -385,24 +334,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "built on: Tue Nov 29, 09:31:55 UTC+3\nplease note: running on c-toxcore!\nmore info on the matter: goo.gl/Gz5KhK & goo.gl/i2TZJr\n\ntox id for queries and general info: EBD2A7B649ABB10ED9F47E5113F04000F39D46F087CEB62FCCE1069471FD6915256D197F2A97",
-            "last_ping": 1483542984
-        },
-        {
-            "ipv4": "bootybay.club",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-                33445,
-                3389
-            ],
-            "public_key": "0CB9D8D636F8E3D71CF44A3019408A846B7BEDFA2810853355DB58C0A36BFE38",
-            "maintainer": "AssPirate",
-            "location": "AU",
-            "status_udp": true,
-            "status_tcp": true,
-            "version": "2016010100",
-            "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "92.54.84.70",
@@ -418,7 +350,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": false,
             "version": "2016010100",
             "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "195.93.190.6",
@@ -434,15 +366,15 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "tox node at strngr.name",
-            "last_ping": 1483542984
+            "last_ping": 1495114702
         },
         {
-            "ipv4": "loki.uplinklabs.net",
-            "ipv6": "loki.uplinklabs.net",
+            "ipv4": "tox.uplinklabs.net",
+            "ipv6": "tox.uplinklabs.net",
             "port": 33445,
             "tcp_ports": [
-                33445,
-                3389
+                3389,
+                33445
             ],
             "public_key": "1A56EA3EDF5DF4C0AEABBF3C2E4E603890F87E983CAC8A0D532A335F2C6E3E1F",
             "maintainer": "AbacusAvenger",
@@ -451,7 +383,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "toxnode.nek0.net",
@@ -468,15 +400,15 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "95.215.44.78",
             "ipv6": "2a02:7aa0:1619::c6fe:d0cb",
             "port": 33445,
             "tcp_ports": [
-                33445,
-                3389
+                3389,
+                33445
             ],
             "public_key": "672DBE27B4ADB9D5FB105A6BB648B2F8FDB89B3323486A7A21968316E012023C",
             "maintainer": "HooinKyoma",
@@ -485,24 +417,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "Thanx to Hooin Kyoma",
-            "last_ping": 1483542984
-        },
-        {
-            "ipv4": "tox.dzenspace.ru",
-            "ipv6": "tox.dzenspace.ru",
-            "port": 33445,
-            "tcp_ports": [
-                33445,
-                3389
-            ],
-            "public_key": "80EF8660D9C5ACE1577BAB031375A0F08284CBFD9F810A857955DCC87377FC4D",
-            "maintainer": "abbat",
-            "location": "DE",
-            "status_udp": true,
-            "status_tcp": true,
-            "version": "2016010100",
-            "motd": "tox-easy-bootstrap",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "163.172.136.118",
@@ -519,15 +434,15 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "LittleTox - your friendly neighbourhood tox node!",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "sorunome.de",
             "ipv6": "sorunome.de",
             "port": 33445,
             "tcp_ports": [
-                33445,
-                3389
+                3389,
+                33445
             ],
             "public_key": "02807CF4F8BB8FB390CC3794BDF1E8449E9A8392C5D3F2200019DA9F1E812E46",
             "maintainer": "Sorunome",
@@ -536,7 +451,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "Keep calm and pony on",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "37.97.185.116",
@@ -552,14 +467,13 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "Yani's node of pleasure and leisure",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "193.124.186.205",
             "ipv6": "2a02:f680:1:1100::542a",
             "port": 5228,
             "tcp_ports": [
-                443,
                 3389,
                 33445
             ],
@@ -570,7 +484,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "80.87.193.193",
@@ -587,7 +501,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "Tox DHT node by Linxon. Author ToxID: EC774ED05A7E71EEE2EBA939A27CD4FF403D7D79E1E685CFD0394B1770498217C6107E4D3C26",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "initramfs.io",
@@ -604,23 +518,7 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "initramfs' Tox DHT Node",
-            "last_ping": 1483542984
-        },
-        {
-            "ipv4": "tox.neverlocate.me",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-                33445
-            ],
-            "public_key": "49183DBF0E865713154069D1C7C7A2732ED78CF32C4D76AF5304FE31C5FEB81A",
-            "maintainer": "brandon",
-            "location": "US",
-            "status_udp": true,
-            "status_tcp": true,
-            "version": "2016010100",
-            "motd": "tox-bootstrapd",
-            "last_ping": 1483542984
+            "last_ping": 1495114701
         },
         {
             "ipv4": "hibiki.eve.moe",
@@ -631,29 +529,28 @@ var _toxnodesJson = []byte(`{
             ],
             "public_key": "D3EB45181B343C2C222A5BCF72B760638E15ED87904625AAD351C594EEFAE03E",
             "maintainer": "EveNeko",
-            "location": "US",
+            "location": "FR",
             "status_udp": true,
             "status_tcp": true,
             "version": "2016010100",
             "motd": "tox-bootstrapd@hibiki.eve.moe",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
-            "ipv4": "shigure.eve.moe",
-            "ipv6": "shigure.eve.moe",
+            "ipv4": "tox.deadteam.org",
+            "ipv6": "tox.deadteam.org",
             "port": 33445,
             "tcp_ports": [
-                33445,
-                3389
+                33445
             ],
-            "public_key": "1A480A53FAF2CBBFCC382D786C43E69EEE23F22C7C23A7CFEB6180A373E23E54",
-            "maintainer": "EveNeko",
-            "location": "GB",
+            "public_key": "C7D284129E83877D63591F14B3F658D77FF9BA9BA7293AEB2BDFBFE1A803AF47",
+            "maintainer": "DeadTeam",
+            "location": "DE",
             "status_udp": true,
             "status_tcp": true,
             "version": "2016010100",
-            "motd": "tox-bootstrapd@shigure.eve.moe",
-            "last_ping": 1483542984
+            "motd": "Vive le TOX",
+            "last_ping": 1495114702
         },
         {
             "ipv4": "46.229.52.198",
@@ -669,15 +566,15 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "Freedom to parrots!",
-            "last_ping": 1483542984
+            "last_ping": 1495114702
         },
         {
             "ipv4": "node.tox.ngc.network",
             "ipv6": "node.tox.ngc.network",
             "port": 33445,
             "tcp_ports": [
-                33445,
-                3389
+                3389,
+                33445
             ],
             "public_key": "A856243058D1DE633379508ADCAFCF944E40E1672FF402750EF712E30C42012A",
             "maintainer": "Nolz",
@@ -686,15 +583,15 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "Unlike Others",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "144.217.86.39",
             "ipv6": "fe80::f816:3eff:fe61:92e3",
             "port": 33445,
             "tcp_ports": [
-                33445,
-                3389
+                3389,
+                33445
             ],
             "public_key": "7E5668E0EE09E19F320AD47902419331FFEE147BB3606769CFBE921A2A2FD34C",
             "maintainer": "velusip",
@@ -703,25 +600,142 @@ var _toxnodesJson = []byte(`{
             "status_tcp": true,
             "version": "2016010100",
             "motd": "Jera",
-            "last_ping": 1483542984
+            "last_ping": 1495114700
         },
         {
             "ipv4": "185.14.30.213",
             "ipv6": "2a00:1ca8:a7::e8b",
             "port": 443,
             "tcp_ports": [
-                33445,
                 3389,
+                33445,
                 443
             ],
             "public_key": "2555763C8C460495B14157D234DD56B86300A2395554BCAE4621AC345B8C1B1B",
             "maintainer": "dvor",
             "location": "NL",
-            "status_udp": false,
+            "status_udp": true,
+            "status_tcp": true,
+            "version": "2016010100",
+            "motd": "Just another tox node.",
+            "last_ping": 1495114700
+        },
+        {
+            "ipv4": "85.21.144.224",
+            "ipv6": "-",
+            "port": 33445,
+            "tcp_ports": [
+                3389,
+                33445
+            ],
+            "public_key": "8F738BBC8FA9394670BCAB146C67A507B9907C8E564E28C2B59BEBB2FF68711B",
+            "maintainer": "himura",
+            "location": "RU",
+            "status_udp": true,
+            "status_tcp": true,
+            "version": "2016010100",
+            "motd": "My Tox ID, desu: EB8E9FFB08DC3C31F8450521A884B478A1B4452BBB4C86BDC7E2AD3CC681C146FF77CBEA21EA",
+            "last_ping": 1495114700
+        },
+        {
+            "ipv4": "tox.natalenko.name",
+            "ipv6": "tox.natalenko.name",
+            "port": 33445,
+            "tcp_ports": [
+                33445
+            ],
+            "public_key": "1CB6EBFD9D85448FA70D3CAE1220B76BF6FCE911B46ACDCF88054C190589650B",
+            "maintainer": "post-factum",
+            "location": "DE",
+            "status_udp": true,
             "status_tcp": true,
             "version": "",
             "motd": "",
-            "last_ping": 1483542984
+            "last_ping": 1495114702
+        },
+        {
+            "ipv4": "37.187.122.30",
+            "ipv6": "-",
+            "port": 33445,
+            "tcp_ports": [
+                33445,
+                3389
+            ],
+            "public_key": "BEB71F97ED9C99C04B8489BB75579EB4DC6AB6F441B603D63533122F1858B51D",
+            "maintainer": "dolohow",
+            "location": "FR",
+            "status_udp": true,
+            "status_tcp": true,
+            "version": "2016010100",
+            "motd": "#stay frosty 8218DB335926393789859EDF2D79AC4CC805ADF73472D08165FEA51555502A58AE84FCE7C3D4",
+            "last_ping": 1495114700
+        },
+        {
+            "ipv4": "completelyunoriginal.moe",
+            "ipv6": "completelyunoriginal.moe",
+            "port": 33445,
+            "tcp_ports": [
+                33445
+            ],
+            "public_key": "FBC7DED0B0B662D81094D91CC312D6CDF12A7B16C7FFB93817143116B510C13E",
+            "maintainer": "SillyPeruvian",
+            "location": "FR",
+            "status_udp": true,
+            "status_tcp": true,
+            "version": "2016010100",
+            "motd": "Completely Unoriginal Tox Bootstrapper. For node maintenance or whatever: https://toxme.io/u/sillyperuvian",
+            "last_ping": 1495114702
+        },
+        {
+            "ipv4": "136.243.141.187",
+            "ipv6": "2a01:4f8:212:2459::a:1337",
+            "port": 443,
+            "tcp_ports": [
+                443,
+                33445,
+                3389
+            ],
+            "public_key": "6EE1FADE9F55CC7938234CC07C864081FC606D8FE7B751EDA217F268F1078A39",
+            "maintainer": "CeBe",
+            "location": "DE",
+            "status_udp": true,
+            "status_tcp": true,
+            "version": "2016010100",
+            "motd": "uTox is the future! - maintained by CeBe - contact: tox@cebe.cc - tox: 7F50119368DC8FD3B1ECAF5D18E3F8854F0484CEC5BBF625D420B8E38638733C02486E387AF8",
+            "last_ping": 1495114700
+        },
+        {
+            "ipv4": "tox.abilinski.com",
+            "ipv6": "-",
+            "port": 33445,
+            "tcp_ports": [
+                33445
+            ],
+            "public_key": "0E9D7FEE2AA4B42A4C18FE81C038E32FFD8D907AAA7896F05AA76C8D31A20065",
+            "maintainer": "flobe",
+            "location": "CA",
+            "status_udp": true,
+            "status_tcp": true,
+            "version": "",
+            "motd": "",
+            "last_ping": 1495114702
+        },
+        {
+            "ipv4": "95.215.46.114",
+            "ipv6": "2a02:7aa0:1619::bdbd:17b8",
+            "port": 33445,
+            "tcp_ports": [
+                3389,
+                33445
+            ],
+            "public_key": "5823FB947FF24CF83DDFAC3F3BAA18F96EA2018B16CC08429CB97FA502F40C23",
+            "maintainer": "isotoxin",
+            "location": "SE",
+            "status_udp": true,
+            "status_tcp": true,
+            "version": "",
+            "motd": "",
+            "last_ping": 1495114700
         },
         {
             "ipv4": "46.101.197.175",
@@ -737,409 +751,73 @@ var _toxnodesJson = []byte(`{
             "location": "DE",
             "status_udp": false,
             "status_tcp": true,
-            "version": "",
-            "motd": "",
-            "last_ping": 1483542984
+            "version": "2014101200",
+            "motd": "tox-bootstrapd",
+            "last_ping": 1495114700
         },
         {
-            "ipv4": "91.121.66.124",
-            "ipv6": "2001:41d0:1:757c::1",
-            "port": 33445,
+            "ipv4": "77.37.160.178",
+            "ipv6": "-",
+            "port": 33440,
             "tcp_ports": [
 
             ],
-            "public_key": "4E3F7D37295664BBD0741B6DBCB6431D6CD77FC4105338C2FC31567BF5C8224A",
-            "maintainer": "h4nt3r",
-            "location": "FR",
+            "public_key": "CE678DEAFA29182EFD1B0C5B9BC6999E5A20B50A1A6EC18B91C8EBB591712416",
+            "maintainer": "Madji",
+            "location": "RU",
             "status_udp": false,
             "status_tcp": false,
             "version": "2016010100",
-            "motd": "tox id for queries and general info: 3BC3C6875508A2EC86BE3E35E4FA9155E444CFA96671AE7D7D0D2585A0A5FA38E071A5E463E5",
-            "last_ping": 1483366164
+            "motd": "ru_maniac's secondary bootstrap node",
+            "last_ping": 1495005620
         },
         {
-            "ipv4": "tox.deadteam.org",
-            "ipv6": "tox.deadteam.org",
+            "ipv4": "77.37.142.179",
+            "ipv6": "-",
             "port": 33445,
             "tcp_ports": [
 
             ],
-            "public_key": "C7D284129E83877D63591F14B3F658D77FF9BA9BA7293AEB2BDFBFE1A803AF47",
-            "maintainer": "DeadTeam",
-            "location": "DE",
+            "public_key": "98F5830A426C6BF165F895F04B897AFC4F57331B4BE0561F583C9F323194227B",
+            "maintainer": "ps",
+            "location": "RU",
             "status_udp": false,
             "status_tcp": false,
             "version": "2016010100",
-            "motd": "Vive le TOX",
-            "last_ping": 1482947064
+            "motd": "tox-bootstrapd",
+            "last_ping": 1494344722
         },
         {
-            "ipv4": "95.215.46.114",
-            "ipv6": "2a02:7aa0:1619::bdbd:17b8",
+            "ipv4": "plfgr.eu.org",
+            "ipv6": "plfgr.eu.org",
             "port": 33445,
             "tcp_ports": [
 
             ],
-            "public_key": "5823FB947FF24CF83DDFAC3F3BAA18F96EA2018B16CC08429CB97FA502F40C23",
-            "maintainer": "Rotkaermota",
-            "location": "SE",
+            "public_key": "F5A2E533EC720927FA970F508D949D5958F37889F039F50C905010244842656E",
+            "maintainer": "nnnn20430",
+            "location": "SI",
             "status_udp": false,
             "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 1482681444
+            "version": "2016010100",
+            "motd": "tox-bootstrapd",
+            "last_ping": 1494390922
         },
         {
-            "ipv4": "144.76.60.215",
-            "ipv6": "2a01:4f8:191:64d6::1",
+            "ipv4": "51.15.54.207",
+            "ipv6": "2001:bc8:4700:2300::28:80d",
             "port": 33445,
             "tcp_ports": [
 
             ],
-            "public_key": "04119E835DF3E78BACF0F84235B300546AF8B936F035185E2A8E9E0A67C8924F",
-            "maintainer": "sonOfRa",
-            "location": "DE",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "195.154.119.113",
-            "ipv6": "2001:bc8:3698:101::1",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "E398A69646B8CEACA9F0B84F553726C1C49270558C57DF5F3C368F05A7D71354",
-            "maintainer": "Munrek",
-            "location": "FR",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "46.38.239.179",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "F5A1A38EFB6BD3C2C8AF8B10D85F0F89E931704D349F1D0720C3C4059AF2440A",
-            "maintainer": "MartinSchröder",
-            "location": "DE",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "104.167.101.29",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "5918AC3C06955962A75AD7DF4F80A5D7C34F7DB9E1498D2E0495DE35B3FE8A57",
-            "maintainer": "noisykeyboard",
-            "location": "CA",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "80.232.246.79",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "CF6CECA0A14A31717CC8501DA51BE27742B70746956E6676FF423A529F91ED5D",
-            "maintainer": "fUNKIAM",
-            "location": "LV",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "139.162.217.110",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "0EEBE6304F4B3F6549F39A87FBB45751929F4833BA6AC5F35B6DFA79D01B4523",
-            "maintainer": "Kr9r0x",
-            "location": "GB",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "95.31.20.151",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "9CA69BB74DE7C056D1CC6B16AB8A0A38725C0349D187D8996766958584D39340",
-            "maintainer": "IgorNovgorodov",
-            "location": "RU",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "home.vikingmakt.com.br",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "188E072676404ED833A4E947DC1D223DF8EFEBE5F5258573A236573688FB9761",
-            "maintainer": "umgeher",
-            "location": "BR",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "188.244.38.183",
-            "ipv6": "2001:470:de00:2:20c:29ff:fe68:354f",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "15A0F9684E2423F9F46CFA5A50B562AE42525580D840CC50E518192BF333EE38",
-            "maintainer": "gem",
-            "location": "RU",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "mrflibble.c4.ee",
-            "ipv6": "2a02:16e0:0:12::4",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "FAAB17014F42F7F20949F61E55F66A73C230876812A9737F5F6D2DCE4D9E4207",
-            "maintainer": "mrflibble",
-            "location": "GB",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "82.211.31.116",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "AF97B76392A6474AF2FD269220FDCF4127D86A42EF3A242DF53A40A268A2CD7C",
-            "maintainer": "Net.Verified",
-            "location": "RU",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "128.199.199.197",
-            "ipv6": "2400:6180:0:d0::17a:a001",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "B05C8869DBB4EDDD308F43C1A974A20A725A36EACCA123862FDE9945BF9D3E09",
-            "maintainer": "wiiaam",
-            "location": "SG",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "tox1.privacydragon.me",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "31910C0497D347FF160D6F3A6C0E317BAFA71E8E03BC4CBB2A185C9D4FB8B31E",
-            "maintainer": "PrivacyDragon",
-            "location": "US",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "zawertun.net",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "5521952892FBD5C185DF7180DB4DEF69D7844DEEE79B1F75A634ED9DF656756E",
-            "maintainer": "ZaWertun",
+            "public_key": "1E64DBA45EC810C0BF3A96327DC8A9D441AB262C14E57FCE11ECBCE355305239",
+            "maintainer": "biodamage",
             "location": "NL",
             "status_udp": false,
             "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "87.98.168.93",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "C3F6C06A624FAE086DA94604A7838DB495769807EC055FADA36EBF2D4484FB33",
-            "maintainer": "_kinka_",
-            "location": "ES",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "185.61.253.189",
-            "ipv6": "2a04:ee00:0:9:20c:29ff:fe27:ad96",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "73EEBCB4CBBE56BF0E0F01881DDD88C6B250BAE92CF487BE3FBE02FD830CE200",
-            "maintainer": "MAXL-SPB",
-            "location": "RU",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "109.75.40.105",
-            "ipv6": "2001:470:70d6::1",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "2B9CD794424FD579044EC2FC5252B23DF8B4AAF239C25074F70B1090C3F8C83A",
-            "maintainer": "nek",
-            "location": "AM",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "srv1.ricin.im",
-            "ipv6": "-",
-            "port": 1337,
-            "tcp_ports": [
-
-            ],
-            "public_key": "3651DAB570D7F60381F87B19D6935EE7F5FE01308DCE71C4B69993150C6A903C",
-            "maintainer": "Ricin.im",
-            "location": "FR",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "185.120.34.64",
-            "ipv6": "2a06:8ec0:1:bb::3862",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "728925473812C7AAC482BE7250BCCAD0B8CB9F737BF3D42ABD34459C1768F854",
-            "maintainer": "Kostik",
-            "location": "GB",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "prok.pw",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "69C3FEBB977687B64FA0213BDEB89A43463BB48DED288150CFFB6429EFF82436",
-            "maintainer": "Prototik",
-            "location": "RU",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "maggie.prok.pw",
-            "ipv6": "maggie.prok.pw",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "B75583B6D967DB8AD7C6D3B6F9318194BCC79B2FEF18F69E2DF275B779E7AA30",
-            "maintainer": "Prototik",
-            "location": "DE",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
-        },
-        {
-            "ipv4": "138.201.172.228",
-            "ipv6": "-",
-            "port": 33445,
-            "tcp_ports": [
-
-            ],
-            "public_key": "1B08FC930EE60429B63273CE39068D46316E79A3F7DDAFAD9C8CA65E50047B7A",
-            "maintainer": "sys0p",
-            "location": "DE",
-            "status_udp": false,
-            "status_tcp": false,
-            "version": "",
-            "motd": "",
-            "last_ping": 0
+            "version": "2016010100",
+            "motd": "Hello my tox ID DCFE79BA65B1017138BB22F074FDCD00A49663B76044E53321CF482CC17CD60617623C3B75A4",
+            "last_ping": 1494951560
         }
     ]
 }
@@ -1155,7 +833,7 @@ func toxnodesJson() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "toxnodes.json", size: 35627, mode: os.FileMode(420), modTime: time.Unix(1483543046, 0)}
+	info := bindataFileInfo{name: "toxnodes.json", size: 26339, mode: os.FileMode(420), modTime: time.Unix(1495114530, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
