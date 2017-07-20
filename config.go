@@ -12,8 +12,7 @@ const (
 )
 
 var (
-	// from config_manual.go
-	outboundip = outboundip_const
+	outboundip = "127.0.0.1:18588"
 	mpcsz      = 256
 )
 

@@ -13,12 +13,13 @@
 ### 依赖包
 
     go get -u github.com/kitech/go-toxcore
+    go get -u github.com/kitech/goplusplus
     go get -u github.com/cyfdecyf/color
     go get -u github.com/bitly/go-simplejson
     go get -u github.com/GianlucaGuarini/go-observable
     go get -u github.com/go-ini/ini
-	go get -u github.com/tatsushid/go-fastping
     go get -u golang.org/x/net/icmp
+    go get -u github.com/tatsushid/go-fastping
     
 
 ### 安装
