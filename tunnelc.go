@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/kitech/go-toxcore"
-	"gopp"
+	"github.com/kitech/goplusplus"
 )
 
 var (
