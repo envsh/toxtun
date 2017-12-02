@@ -9,6 +9,7 @@ import (
 	"runtime/pprof"
 	"syscall"
 
+	"github.com/google/gops/agent"
 	"github.com/kitech/colog"
 )
 
@@ -21,7 +22,7 @@ const (
 var (
 	// options
 	inst_mode   string // = "server" | "client"
-	kcp_mode    string // = "default" // fast
+	kcp_mode    string // fast
 	config_file string // = "toxtun_whtun.ini"
 	config      *TunnelConfig
 	log_level   int = int(colog.LDebug)
@@ -47,8 +48,10 @@ func init() {
 		log.Println("error: ", 1)
 	*/
 
-	flag.StringVar(&kcp_mode, "kcp-mode", "fast", "default|noctrl|fast")
-	if !(kcp_mode == "default" || kcp_mode == "fast" || kcp_mode == "noctrl") {
+	// the same as kcptun
+	flag.StringVar(&kcp_mode, "kcp-mode", "fast", "normal|fast|fast2|fast3")
+	if !(kcp_mode == "fast" || kcp_mode == "noctrl" ||
+		kcp_mode == "fast2" || kcp_mode == "fast3") {
 		kcp_mode = "fast"
 	}
 
@@ -60,6 +63,9 @@ func init() {
 
 func main() {
 	flag.Parse()
+	if err := agent.Listen(agent.Options{}); err != nil {
+		log.Fatal(err)
+	}
 	if len(config_file) > 0 {
 		config = NewTunnelConfig(config_file)
 		log.Println(linfop, config)

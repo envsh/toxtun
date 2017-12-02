@@ -15,7 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-	"github.com/ethereum/go-ethereum/logger/glog"
+	// "github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/nat"
@@ -275,10 +275,10 @@ func (this *EthereumTransport) sendDataClient(buf []byte, size int, toaddr strin
 var eport int = 30303 + 5
 
 func init() {
-	glog.SetToStderr(true)
+	// glog.SetToStderr(true)
 	// glog.SetV(8)
 	// flag.Var(glog.GetVerbosity(), "verbosity", "log verbosity (0-9)")
-	*glog.GetVerbosity() = 4
+	// *glog.GetVerbosity() = 4
 	flag.IntVar(&eport, "eport", eport, "ethereum net port")
 }
 
@@ -298,7 +298,8 @@ func (this *EthereumTransport) newEthereumChatServer() (*whisperv2.Whisper, *p2p
 	// server node
 	cfg := p2p.Config{}
 	cfg.Name = "ethoy"
-	cfg.Discovery = true
+	// cfg.Discovery = true
+	cfg.DiscoveryV5 = true
 	cfg.MaxPeers = 8
 	cfg.MaxPendingPeers = 16
 	cfg.ListenAddr = ":30305"
@@ -379,7 +380,10 @@ func (this *EthereumTransport) shh_message_handler(msg *whisperv2.Message) {
 
 	if true {
 		// log.Println(msg.TTL, len(msg.Payload), string(msg.Payload), "/", msg.Hash.Str())
-		decbuf, err := crypto.Decrypt(this.srv.PrivateKey, msg.Payload)
+		var decbuf []byte
+		var err error
+		// TODO
+		// decbuf, err := crypto.Decrypt(this.srv.PrivateKey, msg.Payload)
 		if err != nil {
 			if isPrintable(string(msg.Payload)) {
 				log.Println(err, len(msg.Payload), string(msg.Payload))

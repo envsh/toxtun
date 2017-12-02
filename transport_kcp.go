@@ -63,7 +63,7 @@ func NewKcpTransport(t *tox.Tox, ch *Channel, server bool, tp Transport) *KcpTra
 		this.kcp.WndSize(wnsz, wnsz)
 		this.kcp.NoDelay(1, 10, 2, 1)
 	}
-	setKCPMode(1, this.kcp) // 0,1,2
+	setKCPMode(1, this.kcp) // 0,1,2,3
 
 	this.kcpPollChan = make(chan KcpPollEvent, mpcsz)
 	this.kcpCheckCloseChan = make(chan KcpCheckCloseEvent, mpcsz)

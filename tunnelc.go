@@ -10,19 +10,20 @@ import (
 	"log"
 	"time"
 
-	"github.com/kitech/go-toxcore"
 	"gopp"
+
+	"github.com/kitech/go-toxcore"
 )
 
 var (
-	// TODO dynamic multiple port mode
-	// tunnel客户端通道监听服务端口
-	tunnelServerPort = 8113
+// TODO dynamic multiple port mode
+// tunnel客户端通道监听服务端口
+// tunnelServerPort = 8113
 )
 
 type Tunnelc struct {
 	tox     *tox.Tox
-	srv     net.Listener
+	srvs    map[string]net.Listener
 	chpool  *ChannelPool
 	grouptp *TransportGroup
 
@@ -56,16 +57,18 @@ func NewTunnelc() *Tunnelc {
 }
 
 func (this *Tunnelc) serve() {
-	tunnelServerPort = config.recs[0].lport
-	srv, err := net.Listen("tcp", fmt.Sprintf(":%d", tunnelServerPort))
-	if err != nil {
-		log.Println(lerrorp, err)
-		return
+	for idx, tunrec := range config.recs {
+		tunnelServerPort := tunrec.lport
+		srv, err := net.Listen("tcp", fmt.Sprintf(":%d", tunnelServerPort))
+		if err != nil {
+			log.Println(lerrorp, err)
+			return
+		}
+		this.srvs[tunrec.tname] = srv
+		log.Println(linfop, fmt.Sprintf("#T%d", idx), "tunaddr:", tunrec.tname, srv.Addr().String())
 	}
-	this.srv = srv
-	log.Println(linfop, "tunaddr:", srv.Addr().String())
 
-	mpcsz := 256
+	// mpcsz := 256
 	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
 	this.kcpPollChan = make(chan KcpPollEvent, mpcsz)
 	this.newConnChan = make(chan NewConnEvent, mpcsz)
@@ -82,13 +85,23 @@ func (this *Tunnelc) serve() {
 		}
 	}()
 
-	go this.serveTcp()
+	for _, rec := range config.recs {
+		tname := rec.tname
+		tproto := rec.tproto
+		switch tproto {
+		case "TCP":
+		case "UDP":
+		default:
+			log.Println("Unknown proto:", tproto, tname)
+		}
+		go this.serveTcp(tname)
+	}
 
 	// like event handler
 	for {
 		select {
 		case evt := <-this.newConnChan:
-			this.initConnChanel(evt.conn, evt.times, evt.btime)
+			this.initConnChannel(evt.conn, evt.times, evt.btime, evt.tname)
 		case evt := <-this.clientReadyReadChan:
 			this.processClientReadyRead(evt.ch, evt.buf, evt.size)
 		case evt := <-this.clientCloseChan:
@@ -109,8 +122,8 @@ func (this *Tunnelc) pollMain() {
 
 }
 
-func (this *Tunnelc) serveTcp() {
-	srv := this.srv
+func (this *Tunnelc) serveTcp(tname string) {
+	srv := this.srvs[tname]
 
 	for {
 		c, err := srv.Accept()
@@ -118,18 +131,19 @@ func (this *Tunnelc) serveTcp() {
 			log.Println(lerrorp, err)
 		}
 		// info.Println(c)
-		this.newConnChan <- NewConnEvent{c, 0, time.Now()}
-		appevt.Trigger("newconn")
+		this.newConnChan <- NewConnEvent{c, 0, time.Now(), tname}
+		appevt.Trigger("newconn", tname)
 	}
 }
 
-func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
-	ch := NewChannelClient(conn)
-	ch.ip = config.recs[0].rhost
-	ch.port = fmt.Sprintf("%d", config.recs[0].rport)
+func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, tname string) {
+	ch := NewChannelClient(conn, tname)
+	rec := config.getRecordByName(tname)
+	ch.ip = rec.rhost
+	ch.port = fmt.Sprintf("%d", rec.rport)
 	this.chpool.putClient(ch)
 
-	toxtunid := config.recs[0].rpubkey
+	toxtunid := rec.rpubkey
 	pkt := ch.makeConnectSYNPacket()
 	pkt.data = this.grouptp.localVirtAddr()
 	_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
@@ -141,7 +155,7 @@ func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
 		if times < 10 {
 			go func() {
 				time.Sleep(500 * time.Millisecond)
-				this.newConnChan <- NewConnEvent{conn, times + 1, btime}
+				this.newConnChan <- NewConnEvent{conn, times + 1, btime, tname}
 			}()
 		} else {
 			log.Println("connect timeout:", times, time.Now().Sub(btime))
@@ -273,8 +287,9 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 }
 
 func (this *Tunnelc) promiseChannelClose(ch *Channel) {
-	log.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv)
-	toxtunid := config.recs[0].rpubkey
+	log.Println("cleaning up:", ch.tname, ch.chidcli, ch.chidsrv, ch.conv)
+	tunrec := config.getRecordByName(ch.tname)
+	toxtunid := tunrec.rpubkey
 	if ch.client_socket_close == true && ch.server_socket_close == false {
 		pkt := ch.makeCloseFINPacket()
 		_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
@@ -337,10 +352,12 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 
 //////////////
 func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra interface{}) {
-	toxtunid := config.recs[0].rpubkey
-	_, err := t.FriendByPublicKey(toxtunid)
-	if err != nil {
-		t.FriendAdd(toxtunid, "tuncli")
+	for tname, tunrec := range config.recs {
+		toxtunid := tunrec.rpubkey
+		_, err := t.FriendByPublicKey(toxtunid)
+		if err != nil {
+			t.FriendAdd(toxtunid, "tuncli4"+tname)
+		}
 		t.WriteSavedata(fname)
 	}
 	log.Println("mytox status:", status)
@@ -388,7 +405,8 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			if ch, ok := this.chpool.pool[pkt.chidcli]; ok {
 				ch.conv = pkt.conv
 				ch.chidsrv = pkt.chidsrv
-				ch.toxid = config.recs[0].rpubkey
+				tunrec := config.getRecordByName(pkt.tname)
+				ch.toxid = tunrec.rpubkey
 				ch.peerVirtAddr = pkt.data
 				ch.tp = NewKcpTransport(this.tox, ch, false, this.grouptp)
 				/*

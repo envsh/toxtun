@@ -52,6 +52,7 @@ func nextMsgid() uint64 {
 }
 
 type Channel struct {
+	tname   string
 	state   int
 	conn    net.Conn
 	chidcli int
@@ -81,8 +82,9 @@ type Channel struct {
 	rmctimes      int
 }
 
-func NewChannelClient(conn net.Conn) *Channel {
+func NewChannelClient(conn net.Conn, tname string) *Channel {
 	ch := new(Channel)
+	ch.tname = tname
 	ch.chidcli = nextChanid()
 	ch.conn = conn
 	ch.conn_begin_time = time.Now()
@@ -249,6 +251,7 @@ func (this *ChannelPool) rmServer(ch *Channel) {
 ////////////
 
 type Packet struct {
+	tname      string
 	chidcli    int
 	chidsrv    int
 	command    string

@@ -35,6 +35,7 @@ type NewConnEvent struct {
 	conn  net.Conn
 	times int
 	btime time.Time
+	tname string
 }
 
 // TODO tox prefix?

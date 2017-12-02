@@ -65,12 +65,14 @@
 - [ ] 活动连接读写超时
 - [ ] 应该还能再加快传输速度
 - [x] kcp的三种模式
-- [x] UDP协议tunnel支持
+- [x] UDP协议transport支持
 - [ ] MultiPath-TCP类似原理支持（多传输通道：tox/UDP/else）
 - [ ] tunnelc/tunneld实现的合并
 - [ ] 同时做客户端或者服务器端
 - [ ] MultiPath 智能选择与参数控制
 - [ ] 每个tunnel一个kcp实例方式
+- [ ] dep依赖管理
+- [ ] UDP 协议 tunnel支持
 
 
 ### 创建连接流程

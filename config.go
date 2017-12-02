@@ -24,11 +24,13 @@ type TunnelRecord struct {
 	rhost   string
 	rport   int
 	rpubkey string
+	tname   string
+	tproto  string // TCP/UDP
 }
 
 type TunnelConfig struct {
 	cfg_file string
-	recs     []TunnelRecord
+	recs     map[string]*TunnelRecord
 	srv_name string
 	sets     *ini.File
 }
@@ -40,7 +42,7 @@ func NewTunnelConfig(cfg_file string) *TunnelConfig {
 		return nil
 	}
 
-	recs := make([]TunnelRecord, 0)
+	recs := make(map[string]*TunnelRecord, 0)
 
 	srv_val, err := f.Section("server").GetKey("name")
 	srv_name := srv_val.String()
@@ -52,7 +54,11 @@ func NewTunnelConfig(cfg_file string) *TunnelConfig {
 		line := cli_val.String()
 
 		rec := parseRecordLine(line)
-		recs = append(recs, rec)
+		rec.tname = key
+		if _, ok := recs[key]; ok {
+			// already exist
+		}
+		recs[key] = &rec
 	}
 
 	return &TunnelConfig{cfg_file, recs, srv_name, f}
@@ -62,18 +68,19 @@ func parseRecordLine(line string) TunnelRecord {
 	sep := ":"
 	segs := strings.Split(line, sep)
 
-	lhost := segs[0]
-	lport, err := strconv.Atoi(segs[1])
+	tproto := strings.ToUpper(segs[0])
+	lhost := segs[1]
+	lport, err := strconv.Atoi(segs[2])
 	if err != nil {
 	}
-	rhost := segs[2]
-	rport, err := strconv.Atoi(segs[3])
-	rpubkey := segs[4]
+	rhost := segs[3]
+	rport, err := strconv.Atoi(segs[4])
+	rpubkey := segs[5]
 	if len(rpubkey) != 76 {
 	}
 
 	return TunnelRecord{
-		lhost, lport, rhost, rport, rpubkey,
+		lhost, lport, rhost, rport, rpubkey, "", tproto,
 	}
 }
 
@@ -85,4 +92,21 @@ func friendInConfig(pubkey string) bool {
 	}
 
 	return false
+}
+
+func (this *TunnelConfig) friendInConfig(pubkey string) bool {
+	for _, rec := range config.recs {
+		if pubkey == rec.rpubkey || strings.HasPrefix(rec.rpubkey, pubkey) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (this *TunnelConfig) getRecordByName(tname string) *TunnelRecord {
+	if rec, ok := this.recs[tname]; ok {
+		return rec
+	}
+	return nil
 }
