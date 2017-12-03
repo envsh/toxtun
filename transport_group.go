@@ -5,9 +5,7 @@ transport只需要一个实例，但需要处理不同的channel。
 package main
 
 import (
-	"encoding/binary"
 	"log"
-	"net"
 	"reflect"
 	"strings"
 	"sync"
@@ -126,8 +124,8 @@ func (this *TransportGroup) initTransports() {
 	// this.ethereumtp = NewEthereumTransport(this.isServer)
 
 	//
-	this.tps = append(this.tps, this.udptp)
-	// this.tps = append(this.tps, this.toxlossytp)
+	// this.tps = append(this.tps, this.udptp)
+	this.tps = append(this.tps, this.toxlossytp)
 	// this.tps = append(this.tps, this.toxlosslesstp)
 	// this.tps = append(this.tps, this.ethereumtp)
 }
@@ -165,7 +163,7 @@ func (this *TransportGroup) PollForever() {
 
 		//
 		buf, size, extra := tp.getEventData(evt)
-		unused(size, extra)
+		unused(buf, size, extra)
 		/*
 			// how dispatch
 				for x, ch := range this.chanpool.pool {
@@ -173,19 +171,22 @@ func (this *TransportGroup) PollForever() {
 				}
 		*/
 
-		var conv uint32
-		// kcp包前4字段为conv，little hacky
-		if len(buf) < 4 {
-			log.Println(lerrorp, "wtf")
-		}
-		conv = binary.LittleEndian.Uint32(buf)
-		ch := this.chpool.pool2[conv]
-		if ch == nil {
-			log.Println(lerrorp, "maybe has some problem")
-		} else {
-			if this.isServer {
-				switch tp.(type) {
-				case *DirectUdpTransport: // update channel's peerAddr
+		/*
+			var conv uint32
+			// kcp包前4字段为conv，little hacky
+			if len(buf) < 4 {
+				log.Println(lerrorp, "wtf")
+			}
+			conv = binary.LittleEndian.Uint32(buf)
+			ch := this.chpool.pool2[conv]
+			if ch == nil {
+				log.Println(lerrorp, "maybe has some problem", conv)
+			} else {
+		*/
+		if this.isServer {
+			switch tp.(type) {
+			case *DirectUdpTransport: // update channel's peerAddr
+				/*
 					pvas := strings.Split(ch.peerVirtAddr, ",")
 					newaddr := extra.(net.Addr).String()
 					if pvas[0] != newaddr {
@@ -193,13 +194,16 @@ func (this *TransportGroup) PollForever() {
 						pvas[0] = newaddr
 						ch.peerVirtAddr = strings.Join(pvas, ",")
 					}
-				}
+				*/
 			}
-
-			kcptp := ch.tp.(*KcpTransport)
-			// kcptp.processSubTransport(newCommonEvent(GroupReadyReadEvent{tp, evt}))
-			kcptp.InputChan <- newCommonEvent(GroupReadyReadEvent{tp, evt})
 		}
+
+		// kcptp := ch.tp.(*KcpTransport)
+		// kcptp.processSubTransport(newCommonEvent(GroupReadyReadEvent{tp, evt}))
+		// kcptp.InputChan <- newCommonEvent(GroupReadyReadEvent{tp, evt})
+		//}
+
+		this.readyReadNoticeChan <- newCommonEvent(GroupReadyReadEvent{tp, evt})
 	}
 
 	this.shutWG.Add(1)

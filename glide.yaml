@@ -1,0 +1,27 @@
+package: toxtun-go
+import:
+- package: github.com/GianlucaGuarini/go-observable
+- package: github.com/bitly/go-simplejson
+- package: github.com/ethereum/go-ethereum
+  subpackages:
+  - crypto
+  - crypto/ecies
+  - p2p
+  - p2p/discover
+  - p2p/nat
+  - params
+  - whisper/whisperv2
+- package: github.com/go-ini/ini
+- package: github.com/google/gops
+  subpackages:
+  - agent
+- package: github.com/kitech/colog
+- package: github.com/kitech/go-toxcore
+- package: github.com/kitech/godsts
+  subpackages:
+  - maps/hashmap
+- package: github.com/tatsushid/go-fastping
+- package: golang.org/x/net
+  subpackages:
+  - icmp
+- package: gopp

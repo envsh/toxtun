@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bitly/go-simplejson"
+	"github.com/hashicorp/yamux"
 )
 
 const (
@@ -52,7 +53,9 @@ func nextMsgid() uint64 {
 }
 
 type Channel struct {
-	tname   string
+	tname string
+	stm   *yamux.Stream
+
 	state   int
 	conn    net.Conn
 	chidcli int

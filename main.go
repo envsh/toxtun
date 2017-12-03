@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"strings"
 	"syscall"
 
 	"github.com/google/gops/agent"
@@ -14,9 +15,10 @@ import (
 )
 
 const (
-	tunconv = uint32(0xaabbccdd)
-	tunmtu  = 1000
-	rdbufsz = 8192
+	tunconv  = uint32(0xaabbccdd)
+	tunmtu   = 1000
+	tunwndsz = tunmtu
+	rdbufsz  = 8192
 )
 
 var (
@@ -29,6 +31,30 @@ var (
 	cpuprofile  string
 )
 
+// build info
+var GitCommit, GitBranch, GitState, GitSummary, BuildDate, Version string
+
+func getBuildInfo(full bool) string {
+	trim := func(s string) string {
+		if strings.HasPrefix(s, "GOVVV-") {
+			return s[6:]
+		}
+		return s
+	}
+	commit := trim(GitCommit)
+	branch := trim(GitBranch)
+	// state := trim(GitState)
+	summary := trim(GitSummary)
+	date := trim(BuildDate)
+	version := trim(Version)
+
+	if full {
+		return fmt.Sprintf("govvv: v%s branch:%s git:%s build:%s summary:%s, ",
+			version, branch, commit, date, summary)
+	}
+	return fmt.Sprintf("govvv: v%s git:%s build:%s", version, commit, date)
+}
+
 const (
 	ltracep   = "trace: "
 	ldebugp   = "debug: "
@@ -39,7 +65,7 @@ const (
 )
 
 func init() {
-	log.SetFlags(log.Flags() | log.Lshortfile)
+	log.SetFlags(log.Flags() | log.Lshortfile | log.Lmicroseconds)
 	colog.Register()
 	/*
 		log.Println("debug: ")
@@ -62,6 +88,7 @@ func init() {
 }
 
 func main() {
+	log.Println(getBuildInfo(true))
 	flag.Parse()
 	if err := agent.Listen(agent.Options{}); err != nil {
 		log.Fatal(err)

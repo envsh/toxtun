@@ -1,8 +1,23 @@
+VERSION         :=      $(shell cat ./VERSION)
+# VERSION=`git describe --tags`
+GITBRANCH=`git rev-parse --abbrev-ref HEAD`
+BUILDDATE=`date +%FT%T%z`
+GOVVV=`govvv -flags -version ${VERSION}|sed 's/=/=GOVVV-/g'`
+
 all: static dynamic
 
 dynamic:
-	go build -v .
+	echo ${GOVVV}
+	go build -v -ldflags "${GOVVV}" .
 	mv toxtun-go toxtun
+
+static: export CGO_CFLAGS=-I$(PWD)/build/include/tox
+static: export CGO_LDFLAGS=-L$(PWD)/build/lib
+static: static_libsodium static_libopus static_libvpx static_libtoxcore
+	# rm $(GOPATH)/pkg/linux_amd64/tox.a
+	go install -v -x tox
+	go build -v -ldflags "${GOVVV}" .
+	mv toxtun-go toxtun-static
 
 # 静态编译libtoxcore与其依赖库
 static_libsodium:
@@ -35,12 +50,4 @@ static_libtoxcore:
 	cd toxcore/ && ./configure --prefix=$(PWD)/build --disable-shared --disable-tests --disable-daemon --disable-ntox && \
 		make -j3 > /dev/null && \
 		make install > /dev/null
-
-static: export CGO_CFLAGS=-I$(PWD)/build/include/tox
-static: export CGO_LDFLAGS=-L$(PWD)/build/lib
-static: static_libsodium static_libopus static_libvpx static_libtoxcore
-	# rm $(GOPATH)/pkg/linux_amd64/tox.a
-	go install -v -x tox
-	go build -v .
-	mv toxtun-go toxtun-static
 

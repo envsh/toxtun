@@ -1,10 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"log"
-	// "math"
+	"math"
 	"reflect"
 	"sync"
 	"time"
@@ -14,13 +15,16 @@ import (
 	"github.com/kitech/go-toxcore"
 )
 
+var kcpConv uint32 = math.MaxUint32 / 2
+
 type KcpTransport struct {
 	TransportBase
 	subtps []Transport
 	tp     Transport
 	// chpool *ChannelPool
-	t  *tox.Tox
-	ch *Channel
+	t *tox.Tox
+	// ch *Channel
+	peerVirtAddr string
 
 	kcp               *KCP // from Channel.kcp
 	kcpPollChan       chan KcpPollEvent
@@ -34,13 +38,59 @@ type KcpTransport struct {
 	quitCtrlC chan bool
 }
 
+func NewKcpTransport2(t *tox.Tox, pvaddr string, server bool, tp Transport) *KcpTransport {
+	if false {
+		log.Println(1)
+	}
+	this := &KcpTransport{}
+	this.name_ = "kcp"
+	this.isServer = server
+	this.peerVirtAddr = pvaddr
+
+	if false {
+		this.tp = NewToxLossyTransport(t)
+		if server {
+			this.tp = NewDirectUdpTransport()
+		} else {
+			// this.tp = NewDirectUdpTransportClient(ch.ip)
+		}
+		this.tp = NewEthereumTransport(server)
+	} else {
+		this.tp = tp
+	}
+
+	// conv := ch.conv
+	conv := kcpConv
+	this.kcp = NewKCP(conv, this.onKcpOutput, nil)
+	this.kcp.SetMtu(tunmtu)
+	if kcp_mode == "fast" {
+		wnsz := 128 // 32(default), 128
+		this.kcp.WndSize(wnsz, wnsz)
+		this.kcp.NoDelay(1, 10, 2, 1)
+	}
+	setKCPMode(1, this.kcp) // 0,1,2,3
+
+	this.readyReadNoticeChan = make(chan CommonEvent, mpcsz)
+	this.kcpPollChan = make(chan KcpPollEvent, mpcsz)
+	this.kcpCheckCloseChan = make(chan KcpCheckCloseEvent, mpcsz)
+
+	this.InputChan = make(chan CommonEvent, mpcsz)
+
+	this.quitTickC = make(chan bool, 1)
+	this.quitCtrlC = make(chan bool, 1)
+
+	go this.serve()
+
+	return this
+}
+
 func NewKcpTransport(t *tox.Tox, ch *Channel, server bool, tp Transport) *KcpTransport {
 	if false {
 		log.Println(1)
 	}
 	this := &KcpTransport{}
 	this.name_ = "kcp"
-	this.ch = ch
+	// this.ch = ch
 	this.isServer = server
 
 	if false {
@@ -85,9 +135,9 @@ func (this *KcpTransport) serve() {
 	go func() {
 		this.shutWG.Add(1)
 		// tickKcpPollC := time.Tick(2000 * time.Millisecond)
-		tickKcpPollC := time.Tick(200 * time.Millisecond)
-		// tickKcpPollC := time.Tick(20 * time.Millisecond)
-		// tickKcpPollC := time.Tick(2 * time.Millisecond)
+		tickKcpPollC := time.Tick(200 * time.Millisecond) // slow
+		// tickKcpPollC := time.Tick(20 * time.Millisecond) // medium
+		// tickKcpPollC := time.Tick(2 * time.Millisecond) // crazy
 		tickKcpCheckC := time.Tick(1000 * time.Millisecond)
 
 		for {
@@ -114,7 +164,8 @@ func (this *KcpTransport) serve() {
 			this.processSubTransport(evt)
 			// processSubTransport
 		case evt := <-this.InputChan:
-			this.processSubTransport(evt)
+			log.Println(lerrorp, "depcreated", &evt)
+			// this.processSubTransport(evt)
 		case <-this.quitCtrlC:
 			goto end
 		}
@@ -139,7 +190,7 @@ func (this *KcpTransport) shutdown() {
 	log.Println(linfop, "all sub goroutines finished.")
 }
 func (this *KcpTransport) getReadyReadChan() <-chan CommonEvent {
-	return nil
+	return this.readyReadNoticeChan
 }
 func (this *KcpTransport) getReadyReadChanType() reflect.Type {
 	return reflect.TypeOf("123")
@@ -292,7 +343,8 @@ func (this *KcpTransport) onKcpOutput(buf []byte, size int, extra interface{}) {
 	log.Println(ldebugp, len(buf), "/", size, "/", string(gopp.SubBytes(buf, 52)))
 
 	var err error
-	err = this.tp.sendData(string(buf[:size]), this.ch.peerVirtAddr)
+	// err = this.tp.sendData(string(buf[:size]), this.ch.peerVirtAddr)
+	err = this.tp.sendData(string(buf[:size]), this.peerVirtAddr)
 	if err != nil {
 		log.Println(lerrorp, err)
 	} else {
@@ -302,7 +354,45 @@ func (this *KcpTransport) onKcpOutput(buf []byte, size int, extra interface{}) {
 
 }
 
-func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
+func (this *KcpTransport) processKcpReadyRead(*Channel) {
+	/*
+		if ch.conn == nil {
+			errl.Println("Not Connected:", ch.chidsrv, ch.chidcli)
+			// return
+		}
+	*/
+	kcp := this.kcp
+
+	buf := make([]byte, kcp.PeekSize())
+	n := kcp.Recv(buf)
+	if len(buf) != n {
+		log.Println(lerrorp, "Invalide kcp recv data", len(buf), n)
+	}
+	if len(buf) != n && n > 0 {
+		buf = buf[:n]
+	}
+
+	bufrd := bytes.NewBuffer(buf[:n])
+	for {
+		buf := make([]byte, tunmtu)
+		rn, err := bufrd.Read(buf)
+		if err != nil {
+			break
+		}
+		buf = buf[:rn]
+
+		comevt := CommonEvent{reflect.TypeOf(buf), reflect.ValueOf(buf)}
+		this.readyReadNoticeChan <- comevt
+		if this.isServer {
+			log.Println(ldebugp, "kcp->srv:", rn)
+		} else {
+			log.Println(ldebugp, "kcp->cli:", rn)
+		}
+		appevt.Trigger("reqbytes", rn, len(buf)+25)
+	}
+}
+
+func (this *KcpTransport) processKcpReadyRead_dep(ch *Channel) {
 	/*
 		if ch.conn == nil {
 			errl.Println("Not Connected:", ch.chidsrv, ch.chidcli)
@@ -326,8 +416,8 @@ func (this *KcpTransport) processKcpReadyRead(ch *Channel) {
 	if pkt.isconnack() {
 	} else if pkt.isdata() {
 		// ch := this.chpool.pool[pkt.chidsrv]
-		ch = this.ch
-		log.Println(ldebugp, "processing channel data:", ch.chidsrv, len(pkt.data), gopp.StrSuf(pkt.data, 52))
+		// ch = this.ch
+		log.Println(ldebugp, "processing channel data:", len(pkt.data), gopp.StrSuf(pkt.data, 52))
 		buf, err := base64.StdEncoding.DecodeString(pkt.data)
 		if err != nil {
 			log.Println(lerrorp, err)
@@ -374,6 +464,8 @@ func (this *KcpTransport) processSubTransport(evt CommonEvent) {
 			fromtpname := this.tp.name()
 			log.Println(ldebugp, fromtpname+"->kcp:", len(data))
 		}
+		// kcp定时poll转换为触发poll
+		this.kcpPollChan <- KcpPollEvent{}
 	}
 }
 

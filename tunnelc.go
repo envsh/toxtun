@@ -40,6 +40,7 @@ type Tunnelc struct {
 func NewTunnelc() *Tunnelc {
 	this := new(Tunnelc)
 	this.chpool = NewChannelPool()
+	this.srvs = make(map[string]net.Listener)
 
 	t := makeTox("toxtunc")
 	this.tox = t
@@ -57,7 +58,7 @@ func NewTunnelc() *Tunnelc {
 }
 
 func (this *Tunnelc) serve() {
-	for idx, tunrec := range config.recs {
+	for tname, tunrec := range config.recs {
 		tunnelServerPort := tunrec.lport
 		srv, err := net.Listen("tcp", fmt.Sprintf(":%d", tunnelServerPort))
 		if err != nil {
@@ -65,7 +66,12 @@ func (this *Tunnelc) serve() {
 			return
 		}
 		this.srvs[tunrec.tname] = srv
-		log.Println(linfop, fmt.Sprintf("#T%d", idx), "tunaddr:", tunrec.tname, srv.Addr().String())
+		log.Println(linfop, fmt.Sprintf("#T%s", tname), "tunaddr:", tunrec.tname, srv.Addr().String())
+
+		ucon := newUnconnection(tunrec.rpubkey, this.grouptp, this.tox)
+		ucon.tname, ucon.gip = tname, tunrec.rpubkey
+		unconns.Put(tunrec.tname, ucon)
+		unconns.Put(tunrec.rpubkey, ucon)
 	}
 
 	// mpcsz := 256
@@ -137,6 +143,44 @@ func (this *Tunnelc) serveTcp(tname string) {
 }
 
 func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, tname string) {
+	ucx, _ := unconns.Get(tname)
+	uc := ucx.(*Unconnection)
+
+	ch := NewChannelClient(conn, tname)
+	rec := config.getRecordByName(tname)
+	ch.ip = rec.rhost
+	ch.port = fmt.Sprintf("%d", rec.rport)
+	log.Println(uc)
+	log.Println(uc.muxcli)
+	log.Println(uc.muxcli.IsClosed())
+	stm, err := uc.muxcli.OpenStream()
+	gopp.ErrPrint(err, tname, conn.LocalAddr())
+	ch.stm = stm
+	this.chpool.putClient(ch)
+	log.Println("Open new stream:", stm.StreamID(), tname)
+
+	go this.pollClientReadyRead(ch)
+	go func() {
+		rbuf := make([]byte, rdbufsz)
+		for {
+			n, err := stm.Read(rbuf)
+			gopp.ErrPrint(err, stm.StreamID())
+			if err != nil {
+				break
+			}
+
+			wn, err := conn.Write(rbuf[:n])
+			gopp.ErrPrint(err, stm.StreamID(), wn)
+			if err != nil {
+				break
+			}
+
+			log.Println(ldebugp, "kcp->cli:", wn, stm.StreamID())
+			appevt.Trigger("respbytes", wn, wn+25)
+		}
+	}()
+}
+func (this *Tunnelc) initConnChannel_dep(conn net.Conn, times int, btime time.Time, tname string) {
 	ch := NewChannelClient(conn, tname)
 	rec := config.getRecordByName(tname)
 	ch.ip = rec.rhost
@@ -255,7 +299,7 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 */
 func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
-	log.Println(ldebugp)
+	log.Println(ldebugp, ch.tname)
 	rbuf := make([]byte, rdbufsz)
 	for {
 		n, err := ch.conn.Read(rbuf)
@@ -263,12 +307,13 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 			log.Println("chan read:", err, ch.chidcli, ch.chidsrv, ch.conv)
 			break
 		}
-		log.Println(linfop, n, ch.tp.sendBufferFull())
+		// log.Println(linfop, n, ch.tp.sendBufferFull())
+		log.Println(linfop, n)
 
 		// 应用层控制kcp.WaitSnd()的大小
 		for {
-			// if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
-			if !ch.tp.sendBufferFull() {
+			// if !ch.tp.sendBufferFull() {
+			if true {
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				// this.processClientReadyRead(ch, rbuf, n)
 				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
@@ -301,7 +346,7 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 		ch.addCloseReason("client_close")
 		log.Println("client socket closed, notify server.", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		this.chpool.rmClient(ch)
-		ch.tp.shutdown()
+		// ch.tp.shutdown()
 		appevt.Trigger("closereason", ch.closeReason())
 	} else if ch.client_socket_close == true && ch.server_socket_close == true {
 		//
@@ -324,6 +369,14 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 }
 
 func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
+	log.Println(ch)
+	log.Println(ch.stm)
+	sn, err := ch.stm.Write(buf)
+	gopp.ErrPrint(err, ch.tname, ch.stm.StreamID())
+	log.Println(ldebugp, "cli->kcp:", size, sn, ch.conv)
+	appevt.Trigger("reqbytes", size, len(buf))
+}
+func (this *Tunnelc) processClientReadyRead_dep(ch *Channel, buf []byte, size int) {
 	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
 	pkt := ch.makeDataPacket(sbuf)
 	// sn := ch.kcp.Send(pkt.toJson())

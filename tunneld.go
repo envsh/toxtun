@@ -10,8 +10,10 @@ import (
 	"net"
 	"time"
 
-	"github.com/kitech/go-toxcore"
 	"gopp"
+
+	"github.com/hashicorp/yamux"
+	"github.com/kitech/go-toxcore"
 )
 
 type Tunneld struct {
@@ -60,6 +62,26 @@ func (this *Tunneld) serve() {
 	this.serverReadyReadChan = make(chan ServerReadyReadEvent, mpcsz)
 	this.serverCloseChan = make(chan ServerCloseEvent, mpcsz)
 
+	// 为每个好友创建一条虚拟连接
+	for i := uint32(0); i < 8; i++ {
+		if !this.tox.FriendExists(i) {
+			break
+		}
+		pubkey, _ := this.tox.FriendGetPublicKey(i)
+		go func() {
+			uc := newUnconnectionServer(pubkey, this.grouptp, this.tox)
+			unconns.Put(pubkey, uc)
+
+			for {
+				stm, err := uc.muxcli.AcceptStream()
+				gopp.ErrPrint(err)
+				log.Println("new stm:", stm.StreamID(), uc.gip)
+
+				go this.connectToBackend(stm, uc)
+			}
+		}()
+	}
+
 	// install pollers
 	go func() {
 		for {
@@ -104,7 +126,49 @@ func (this *Tunneld) serve() {
 ///////////
 
 // should block
-func (this *Tunneld) connectToBackend(ch *Channel) {
+func (this *Tunneld) connectToBackend(stm *yamux.Stream, uc *UnconnectionServer) {
+	// Dial
+	ip := "v.fixlan.tk"
+	port := "1905"
+	conn, err := net.Dial("tcp", net.JoinHostPort(ip, port))
+	if err != nil {
+		log.Println(lerrorp, err)
+		// 连接结束
+		log.Println(ldebugp, "connection closed, cleaning up...:", stm.StreamID())
+		this.serverCloseChan <- ServerCloseEvent{nil}
+		appevt.Trigger("connact", -1)
+		return
+	}
+	// ch.conn = conn
+	log.Println("connected to:", conn.RemoteAddr().String(), stm.StreamID())
+	// info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
+
+	// copy steam to real srv
+	go func() {
+		buf := make([]byte, rdbufsz)
+		for {
+			n, err := stm.Read(buf)
+			gopp.ErrPrint(err, stm.StreamID())
+			if err != nil {
+				break
+			}
+			wn, err := conn.Write(buf[:n])
+			gopp.ErrPrint(err, wn)
+			if err != nil {
+				break
+			}
+		}
+		log.Println("close stream:", stm.StreamID(), stm.Session().IsClosed())
+	}()
+
+	appevt.Trigger("newconn")
+	appevt.Trigger("connok")
+	appevt.Trigger("connact", 1)
+	// can connect backend now，不能阻塞，开新的goroutine
+	this.pollServerReadyRead(conn, stm, uc)
+}
+
+func (this *Tunneld) connectToBackend_dep(ch *Channel) {
 	this.chpool.putServer(ch)
 
 	// Dial
@@ -134,10 +198,40 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	appevt.Trigger("connok")
 	appevt.Trigger("connact", 1)
 	// can connect backend now，不能阻塞，开新的goroutine
-	this.pollServerReadyRead(ch)
+	this.pollServerReadyRead_dep(ch)
 }
 
-func (this *Tunneld) pollServerReadyRead(ch *Channel) {
+func (this *Tunneld) pollServerReadyRead(conn net.Conn, stm *yamux.Stream, uc *UnconnectionServer) {
+	// TODO 使用内存池
+	rbuf := make([]byte, rdbufsz)
+
+	log.Println(ldebugp, "copying server to client:", stm.StreamID(), uc.gip)
+	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
+	for {
+		n, err := conn.Read(rbuf)
+		gopp.ErrPrint(err, stm.StreamID(), uc.gip)
+		if err != nil {
+			break
+		}
+
+		wn, err := stm.Write(rbuf[:n])
+		gopp.ErrPrint(err, stm.StreamID(), uc.gip)
+		if err != nil {
+			break
+		}
+		size := n
+		log.Println(ldebugp, "srv->kcp:", wn, size)
+		appevt.Trigger("respbytes", size, n+25) // 25 = kcp header len + 1tox
+	}
+
+	// 连接结束
+	log.Println(ldebugp, "connection closed, cleaning up...:", stm.StreamID(), uc.gip)
+	// ch.server_socket_close = true
+	// this.serverCloseChan <- ServerCloseEvent{ch} // TODO  延迟结束
+	appevt.Trigger("connact", -1)
+}
+
+func (this *Tunneld) pollServerReadyRead_dep(ch *Channel) {
 	// TODO 使用内存池
 	rbuf := make([]byte, rdbufsz)
 
@@ -305,7 +399,7 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 					ch.kcp.NoDelay(1, 10, 2, 1)
 				}
 			*/
-			go this.connectToBackend(ch)
+			go this.connectToBackend_dep(ch)
 
 		} else if pkt.command == CMDCLOSEFIN {
 			log.Println(ldebugp, friendNumber, len(message), gopp.StrSuf(message, 252))
