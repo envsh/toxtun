@@ -8,7 +8,7 @@ all: static dynamic
 
 dynamic:
 	echo ${GOVVV}
-	go build -v -ldflags "${GOVVV}" .
+	go build -v -race -ldflags "${GOVVV}" .
 	mv toxtun-go toxtun
 
 static: export CGO_CFLAGS=-I$(PWD)/build/include/tox

@@ -1,6 +1,7 @@
 #!/bin/sh
 
 
+set -x
 URL=https://nodes.tox.chat/json
 
 curl "$URL" > toxnodes_raw.json

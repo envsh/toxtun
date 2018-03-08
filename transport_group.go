@@ -80,7 +80,7 @@ func (this *TransportGroup) sendData(data string, to string) error {
 		for idx, tp := range this.tps {
 			err := tp.sendData(data, tos[idx])
 			if err != nil {
-				log.Println(err)
+				log.Println(err, tp.name())
 			}
 		}
 	} else {
@@ -92,7 +92,7 @@ func (this *TransportGroup) sendData(data string, to string) error {
 		for idx, tp := range this.tps {
 			err := tp.sendData(data, tos[idx])
 			if err != nil {
-				log.Println(err)
+				log.Println(err, tp.name())
 			}
 		}
 	}
@@ -126,6 +126,7 @@ func (this *TransportGroup) initTransports() {
 	//
 	// this.tps = append(this.tps, this.udptp)
 	this.tps = append(this.tps, this.toxlossytp)
+	log.Println("isServer:", this.isServer, ", add transport:", this.toxlossytp.name())
 	// this.tps = append(this.tps, this.toxlosslesstp)
 	// this.tps = append(this.tps, this.ethereumtp)
 }

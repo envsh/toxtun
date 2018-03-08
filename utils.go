@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"time"
@@ -88,3 +89,18 @@ func isReservedIpStr(ip string) bool {
 
 func unused(args ...interface{})   {}
 func anyerror(v interface{}) error { return gopp.NewErroraN(v, 1) }
+
+func printq(v interface{}, args ...interface{}) string {
+	msg := fmt.Sprintf("%+v", v)
+	for _, arg := range args {
+		msg += fmt.Sprintf(" %+v", arg)
+	}
+	return msg
+}
+
+func ErrPrint(err error, args ...interface{}) error {
+	if err != nil {
+		log.Output(2, printq(err, args...))
+	}
+	return err
+}

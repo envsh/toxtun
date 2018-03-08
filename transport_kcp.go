@@ -17,6 +17,7 @@ import (
 
 var kcpConv uint32 = math.MaxUint32 / 2
 
+// TODO drop *tox.Tox field
 type KcpTransport struct {
 	TransportBase
 	subtps []Transport
@@ -30,6 +31,7 @@ type KcpTransport struct {
 	kcpPollChan       chan KcpPollEvent
 	kcpNextUpdateWait int
 	kcpCheckCloseChan chan KcpCheckCloseEvent
+	kcpmu             sync.RWMutex
 
 	InputChan chan CommonEvent // for skip lock
 
@@ -148,6 +150,7 @@ func (this *KcpTransport) serve() {
 			case <-tickKcpCheckC:
 				this.kcpCheckCloseChan <- KcpCheckCloseEvent{}
 			case <-this.quitTickC:
+				log.Println("???")
 				this.shutWG.Done()
 				return
 			}
@@ -161,7 +164,9 @@ func (this *KcpTransport) serve() {
 		case <-this.kcpPollChan:
 			this.serveKcp()
 		case evt := <-this.tp.getReadyReadChan():
+			log.Println("before")
 			this.processSubTransport(evt)
+			log.Println("end")
 			// processSubTransport
 		case evt := <-this.InputChan:
 			log.Println(lerrorp, "depcreated", &evt)
@@ -199,6 +204,8 @@ func (this *KcpTransport) getEventData(evt CommonEvent) ([]byte, int, interface{
 	return nil, 0, nil
 }
 func (this *KcpTransport) sendData(data string, to string) error {
+	this.kcpmu.Lock()
+	defer this.kcpmu.Unlock()
 	n := this.kcp.Send([]byte(data))
 	switch {
 	case n < 0:
@@ -254,7 +261,10 @@ func (this *KcpTransport) serveKcp() {
 		log.Println(lerrorp, "already left")
 		return
 	}
+	// log.Println("nnnnnnnnnnnnnn") // why stopped
 	{
+		this.kcpmu.Lock()
+		defer this.kcpmu.Unlock()
 		kcp := this.kcp
 		// kcp.Update(uint32(iclock2()))
 		kcp.Update()
@@ -465,17 +475,26 @@ func (this *KcpTransport) processSubTransport(evt CommonEvent) {
 			log.Println(ldebugp, fromtpname+"->kcp:", len(data))
 		}
 		// kcp定时poll转换为触发poll
-		this.kcpPollChan <- KcpPollEvent{}
+		// 触发poll需要做一个block检测
+		if len(this.kcpPollChan) == cap(this.kcpPollChan) {
+			log.Println(lwarningp, "kcpPollChan will block/deadlock if send, omitted currently")
+		} else {
+			this.kcpPollChan <- KcpPollEvent{}
+		}
 	}
 }
 
 const (
 	kcp_mode_default = 0 // faketcp
-	kcp_mode_noctrl  = 1
-	kcp_mode_fast    = 2
+	kcp_mode_noctrl  = 0
+	kcp_mode_normal  = 0
+	kcp_mode_fast    = 1
+	kcp_mode_fast2   = 2
+	kcp_mode_fast3   = 3
 )
 
 func setKCPMode(mode int, kcp *KCP) {
+
 	if mode == 0 {
 		// 默认模式
 		kcp.NoDelay(0, 10, 0, 0)
@@ -490,6 +509,16 @@ func setKCPMode(mode int, kcp *KCP) {
 		// 第五个参数 为是否禁用常规流控，这里禁止
 		kcp.NoDelay(1, 10, 2, 1)
 	}
+
+	modes := map[int][]int{
+		kcp_mode_normal: []int{0, 40, 2, 1},
+		kcp_mode_fast:   []int{0, 30, 2, 1},
+		kcp_mode_fast2:  []int{1, 20, 2, 1},
+		kcp_mode_fast3:  []int{1, 10, 2, 1},
+	}
+
+	args := modes[mode]
+	kcp.NoDelay(args[0], args[1], args[2], args[3])
 }
 
 /*

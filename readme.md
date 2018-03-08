@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/kitech/toxtun.svg?branch=master)](https://travis-ci.org/kitech/toxtun)
+[![Build Status](https://travis-ci.org/envsh/toxtun.svg?branch=master)](https://travis-ci.org/envsh/toxtun)
 
 ### toxtun
 
@@ -23,11 +23,11 @@
 
 ### 安装
 
-    go get -u github.com/kitech/toxtun
+    go get -u github.com/envsh/toxtun
     
 或者，
 
-    git clone https://github.com/kitech/toxtun
+    git clone https://github.com/envsh/toxtun
     cd toxtun
     go build -v
 

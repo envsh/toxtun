@@ -44,7 +44,7 @@ func makeTox(name string) *tox.Tox {
 	for i := 0; i < 7; i++ {
 		opt.Tcp_port = uint16(port)
 		// opt.Tcp_port = 0
-		t = tox.NewTox(opt)
+		t, _ = tox.NewTox(opt)
 		if t != nil {
 			break
 		}

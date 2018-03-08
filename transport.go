@@ -28,12 +28,35 @@ func (this *TransportBase) name() string          { return this.name_ }
 func (this *TransportBase) localVirtAddr() string { return this.localVirtAddr_ }
 func (this *TransportBase) sendBufferFull() bool  { return false }
 
+/*
+就目前实现的transport，它们之间的角色关系：
+DirectUdpTransport
+ToxLossyTransport
+ToxLosslessTransport
+EthereumTransport
+GroupTransport
+KcpTransport
+
+KcpTransport和ToxLosslessTransport是类似TCP的可靠传输。
+其他是类似UDP的不可靠传输。
+GroupTransport是类似MPUDP的多路径不可靠传输。
+除了KcpTransport之外，其他的传输在不可靠传输角度是可以相互替换的。
+*/
+
+// featureTypes
+const (
+	FT_Lossless = 0
+)
+
 type Transport interface {
 	init() bool
 	serve()
+	// TODO don't export like this api
 	getReadyReadChan() <-chan CommonEvent
 	getReadyReadChanType() reflect.Type
 	getEventData(evt CommonEvent) ([]byte, int, interface{})
+	// blocked
+	// readData() ([]byte, int, interface{})
 	sendData(data string, to string) error
 	localVirtAddr() string
 	name() string
@@ -42,6 +65,7 @@ type Transport interface {
 }
 
 // TODO only port mode
+// TODO singleton udpSrv for one instance
 type DirectUdpTransport struct {
 	TransportBase
 	udpSrv net.PacketConn
@@ -59,6 +83,8 @@ func NewDirectUdpTransport() *DirectUdpTransport {
 	obip := getOutboundIp()
 	if !isReservedIpStr(obip) {
 		tp.enabled = true
+	} else {
+		log.Println(lwarningp, "reseved ip detected, disable DirectUdpTransport:", obip)
 	}
 
 	tp.isServer = true
@@ -75,6 +101,8 @@ func NewDirectUdpTransportClient(srvip string) *DirectUdpTransport {
 		obip := srvip
 		if !isReservedIpStr(obip) {
 			tp.enabled = true
+		} else {
+			log.Println(lwarningp, "reseved ip detected, disable DirectUdpTransport:", obip)
 		}
 	} else {
 		// TODO
@@ -126,7 +154,7 @@ func (this *DirectUdpTransport) initServer() bool {
 		}
 	}
 	if this.udpSrv == nil {
-		log.Fatalln("can not listen UDP port: (%d, %d)", 18588, 18588+256)
+		log.Fatalf("can not listen UDP port: (%d, %d)\n", 18588, 18588+256)
 	}
 	return true
 }

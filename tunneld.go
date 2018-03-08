@@ -128,8 +128,12 @@ func (this *Tunneld) serve() {
 // should block
 func (this *Tunneld) connectToBackend(stm *yamux.Stream, uc *UnconnectionServer) {
 	// Dial
+	// TODO 怎么是写死的呢
 	ip := "v.fixlan.tk"
 	port := "1905"
+	ip = "127.0.0.1"
+	port = "8118"
+	log.Println(linfop, "Connecting...", ip, port)
 	conn, err := net.Dial("tcp", net.JoinHostPort(ip, port))
 	if err != nil {
 		log.Println(lerrorp, err)
@@ -148,12 +152,12 @@ func (this *Tunneld) connectToBackend(stm *yamux.Stream, uc *UnconnectionServer)
 		buf := make([]byte, rdbufsz)
 		for {
 			n, err := stm.Read(buf)
-			gopp.ErrPrint(err, stm.StreamID())
+			ErrPrint(err, stm.StreamID())
 			if err != nil {
 				break
 			}
 			wn, err := conn.Write(buf[:n])
-			gopp.ErrPrint(err, wn)
+			ErrPrint(err, wn)
 			if err != nil {
 				break
 			}
@@ -209,14 +213,16 @@ func (this *Tunneld) pollServerReadyRead(conn net.Conn, stm *yamux.Stream, uc *U
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
 	for {
 		n, err := conn.Read(rbuf)
-		gopp.ErrPrint(err, stm.StreamID(), uc.gip)
+		ErrPrint(err, stm.StreamID(), uc.gip)
 		if err != nil {
+			log.Println(err, stm.StreamID(), uc.gip, len(rbuf))
 			break
 		}
 
 		wn, err := stm.Write(rbuf[:n])
-		gopp.ErrPrint(err, stm.StreamID(), uc.gip)
+		ErrPrint(err, stm.StreamID(), uc.gip)
 		if err != nil {
+			log.Println(err, stm.StreamID(), uc.gip)
 			break
 		}
 		size := n
@@ -327,7 +333,7 @@ func (this *Tunneld) channelGC() {
 
 ////////////////
 func (this *Tunneld) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra interface{}) {
-	log.Println("mytox status:", status)
+	log.Println("mytox status:", status, tox.ConnStatusString(status))
 	if status == 0 {
 		switchServer(t)
 	}

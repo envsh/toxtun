@@ -160,10 +160,10 @@ func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, 
 	log.Println("Open new stream:", stm.StreamID(), tname)
 
 	go this.pollClientReadyRead(ch)
-	go func() {
+	go func() { // copy net -> local
 		rbuf := make([]byte, rdbufsz)
 		for {
-			n, err := stm.Read(rbuf)
+			n, err := stm.Read(rbuf) // TODO data race with tunnelc.go:373
 			gopp.ErrPrint(err, stm.StreamID())
 			if err != nil {
 				break
@@ -369,8 +369,8 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 }
 
 func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
-	log.Println(ch)
-	log.Println(ch.stm)
+	log.Println(ch.chidcli, ch.chidsrv, ch.conv)
+	log.Println(ch.stm.StreamID()) // TODO data race with tunnelc.go:106
 	sn, err := ch.stm.Write(buf)
 	gopp.ErrPrint(err, ch.tname, ch.stm.StreamID())
 	log.Println(ldebugp, "cli->kcp:", size, sn, ch.conv)
@@ -413,7 +413,7 @@ func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra 
 		}
 		t.WriteSavedata(fname)
 	}
-	log.Println("mytox status:", status)
+	log.Println("mytox status:", status, tox.ConnStatusString(status))
 	if status == 0 {
 		switchServer(t)
 	}
