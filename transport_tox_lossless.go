@@ -6,7 +6,8 @@ import (
 
 	"gopp"
 
-	"github.com/kitech/go-toxcore"
+	// "github.com/kitech/go-toxcore"
+	tox "github.com/TokTok/go-toxcore-c"
 )
 
 type ToxLosslessTransport struct {

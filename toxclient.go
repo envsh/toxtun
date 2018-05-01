@@ -8,8 +8,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/kitech/go-toxcore"
-
+	// "github.com/kitech/go-toxcore"
+	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/bitly/go-simplejson"
 )
 
@@ -44,7 +44,7 @@ func makeTox(name string) *tox.Tox {
 	for i := 0; i < 7; i++ {
 		opt.Tcp_port = uint16(port)
 		// opt.Tcp_port = 0
-		t, _ = tox.NewTox(opt)
+		t = tox.NewTox(opt)
 		if t != nil {
 			break
 		}

@@ -12,7 +12,8 @@ import (
 
 	"gopp"
 
-	"github.com/kitech/go-toxcore"
+	// "github.com/kitech/go-toxcore"
+	tox "github.com/TokTok/go-toxcore-c"
 )
 
 var kcpConv uint32 = math.MaxUint32 / 2
@@ -164,13 +165,15 @@ func (this *KcpTransport) serve() {
 		case <-this.kcpPollChan:
 			this.serveKcp()
 		case evt := <-this.tp.getReadyReadChan():
-			log.Println("before")
+			// log.Println("before")
 			this.processSubTransport(evt)
-			log.Println("end")
+			// log.Println("end")
 			// processSubTransport
 		case evt := <-this.InputChan:
 			log.Println(lerrorp, "depcreated", &evt)
 			// this.processSubTransport(evt)
+		case <-this.kcpCheckCloseChan:
+			// this.kcpCheckClose()
 		case <-this.quitCtrlC:
 			goto end
 		}
@@ -204,8 +207,10 @@ func (this *KcpTransport) getEventData(evt CommonEvent) ([]byte, int, interface{
 	return nil, 0, nil
 }
 func (this *KcpTransport) sendData(data string, to string) error {
+	// log.Println(ldebugp, "before kcpmu lock")
 	this.kcpmu.Lock()
 	defer this.kcpmu.Unlock()
+	// log.Println(ldebugp, "end kcpmu lock")
 	n := this.kcp.Send([]byte(data))
 	switch {
 	case n < 0:
@@ -263,13 +268,18 @@ func (this *KcpTransport) serveKcp() {
 	}
 	// log.Println("nnnnnnnnnnnnnn") // why stopped
 	{
+		// log.Println(ldebugp, "before kcpmu lock")
 		this.kcpmu.Lock()
 		defer this.kcpmu.Unlock()
+		// log.Println(ldebugp, "end kcpmu lock")
 		kcp := this.kcp
 		// kcp.Update(uint32(iclock2()))
+		// log.Println(ldebugp, "before")
 		kcp.Update()
+		// log.Println(ldebugp, "center")
 
 		n := kcp.Recv(nil)
+		// log.Println(ldebugp, "end")
 		switch n {
 		case -3: // available size  > 0
 			this.processKcpReadyRead(nil)

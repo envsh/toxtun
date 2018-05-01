@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 
+	_ "net/http/pprof"
+
 	"github.com/google/gops/agent"
 	"github.com/kitech/colog"
 )
@@ -90,6 +92,9 @@ func init() {
 func main() {
 	log.Println(getBuildInfo(true))
 	flag.Parse()
+	colog.SetDefaultLevel(colog.LDebug)
+	colog.SetMinLevel(colog.LInfo)
+	colog.SetMinLevel(colog.Level(log_level))
 	if err := agent.Listen(agent.Options{}); err != nil {
 		log.Fatal(err)
 	}
@@ -145,7 +150,7 @@ func main() {
 		case s := <-c:
 			switch s {
 			case syscall.SIGINT:
-				log.Println("exiting...", s)
+				log.Println(linfop, "exiting...", s)
 				// os.Exit(0) // will not run defer
 				return // will run defer
 			default:

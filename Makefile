@@ -6,8 +6,11 @@ GOVVV=`govvv -flags -version ${VERSION}|sed 's/=/=GOVVV-/g'`
 
 all: static dynamic
 
+# default
 dynamic:
 	echo ${GOVVV}
+	PKG_CONFIG_PATH=/opt/toxcore-static2/lib64/pkgconfig/ \
+	CGO_LDFLAGS="-lopus -lsodium" \
 	go build -v -race -ldflags "${GOVVV}" .
 	mv toxtun-go toxtun
 

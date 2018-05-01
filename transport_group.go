@@ -10,7 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kitech/go-toxcore"
+	// "github.com/kitech/go-toxcore"
+	tox "github.com/TokTok/go-toxcore-c"
 )
 
 type TransportGroup struct {
@@ -126,7 +127,7 @@ func (this *TransportGroup) initTransports() {
 	//
 	// this.tps = append(this.tps, this.udptp)
 	this.tps = append(this.tps, this.toxlossytp)
-	log.Println("isServer:", this.isServer, ", add transport:", this.toxlossytp.name())
+	log.Println(linfop, "isServer:", this.isServer, ", add transport:", this.toxlossytp.name())
 	// this.tps = append(this.tps, this.toxlosslesstp)
 	// this.tps = append(this.tps, this.ethereumtp)
 }

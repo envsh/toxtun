@@ -12,7 +12,8 @@ import (
 
 	"gopp"
 
-	"github.com/kitech/go-toxcore"
+	// tox "github.com/kitech/go-toxcore"
+	tox "github.com/TokTok/go-toxcore-c"
 )
 
 var (
@@ -137,6 +138,7 @@ func (this *Tunnelc) serveTcp(tname string) {
 			log.Println(lerrorp, err)
 		}
 		// info.Println(c)
+		log.Printf(linfop+"New connection from %s to %s: %s\n", c.RemoteAddr().String(), tname, srv.Addr().String())
 		this.newConnChan <- NewConnEvent{c, 0, time.Now(), tname}
 		appevt.Trigger("newconn", tname)
 	}
@@ -157,7 +159,7 @@ func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, 
 	gopp.ErrPrint(err, tname, conn.LocalAddr())
 	ch.stm = stm
 	this.chpool.putClient(ch)
-	log.Println("Open new stream:", stm.StreamID(), tname)
+	log.Println(linfop, "Open new stream:", stm.StreamID(), tname)
 
 	go this.pollClientReadyRead(ch)
 	go func() { // copy net -> local
@@ -178,6 +180,7 @@ func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, 
 			log.Println(ldebugp, "kcp->cli:", wn, stm.StreamID())
 			appevt.Trigger("respbytes", wn, wn+25)
 		}
+		log.Printf(linfop+"Stream %d's net->local channel closed", stm.StreamID())
 	}()
 }
 func (this *Tunnelc) initConnChannel_dep(conn net.Conn, times int, btime time.Time, tname string) {
@@ -308,7 +311,7 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 			break
 		}
 		// log.Println(linfop, n, ch.tp.sendBufferFull())
-		log.Println(linfop, n)
+		log.Println(ldebugp, n)
 
 		// 应用层控制kcp.WaitSnd()的大小
 		for {
@@ -325,14 +328,15 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 	}
 
 	// 连接结束
-	log.Println(ldebugp, "connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
+	log.Printf(linfop+"Stream %d's local->net channel closed", ch.stm.StreamID())
+	log.Println(linfop, "connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
 	ch.client_socket_close = true
 	this.clientCloseChan <- ClientCloseEvent{ch}
 	appevt.Trigger("connact", -1)
 }
 
 func (this *Tunnelc) promiseChannelClose(ch *Channel) {
-	log.Println("cleaning up:", ch.tname, ch.chidcli, ch.chidsrv, ch.conv)
+	log.Println(linfop, "cleaning up:", ch.tname, ch.chidcli, ch.chidsrv, ch.conv)
 	tunrec := config.getRecordByName(ch.tname)
 	toxtunid := tunrec.rpubkey
 	if ch.client_socket_close == true && ch.server_socket_close == false {
@@ -344,25 +348,25 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 			return
 		}
 		ch.addCloseReason("client_close")
-		log.Println("client socket closed, notify server.", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
+		log.Println(linfop, "client socket closed, notify server.", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		this.chpool.rmClient(ch)
 		// ch.tp.shutdown()
 		appevt.Trigger("closereason", ch.closeReason())
 	} else if ch.client_socket_close == true && ch.server_socket_close == true {
 		//
 		ch.addCloseReason("both_close")
-		log.Println("both socket closed:", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
+		log.Println(linfop, "both socket closed:", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		this.chpool.rmClient(ch)
 		ch.tp.shutdown()
 		appevt.Trigger("closereason", ch.closeReason())
 	} else if ch.client_socket_close == false && ch.server_socket_close == true {
 		ch.addCloseReason("server_close")
-		log.Println("server socket closed, force close client", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
+		log.Println(linfop, "server socket closed, force close client", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		ch.client_socket_close = true // ch.conn真正关闭可能有延时，造成此处重复处理。提前设置关闭标识。
 		ch.conn.Close()
 		appevt.Trigger("closereason", ch.closeReason())
 	} else {
-		log.Println("what state:", ch.chidcli, ch.chidsrv, ch.conv,
+		log.Println(lerrorp, "what state:", ch.chidcli, ch.chidsrv, ch.conv,
 			ch.server_socket_close, ch.server_kcp_close, ch.client_socket_close)
 		panic("Ooops")
 	}
@@ -413,7 +417,7 @@ func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra 
 		}
 		t.WriteSavedata(fname)
 	}
-	log.Println("mytox status:", status, tox.ConnStatusString(status))
+	log.Println(linfop, "mytox status:", status, tox.ConnStatusString(status))
 	if status == 0 {
 		switchServer(t)
 	}
@@ -432,7 +436,7 @@ func (this *Tunnelc) onToxnetFriendRequest(t *tox.Tox, friendId string, message 
 
 func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status int, userData interface{}) {
 	fid, _ := this.tox.FriendGetPublicKey(friendNumber)
-	log.Println("peer status (fn/st/id):", friendNumber, status, fid)
+	log.Println(linfop, "peer status (fn/st/id):", friendNumber, status, fid)
 	if status == 0 {
 		if friendInConfig(fid) {
 			switchServer(t)
