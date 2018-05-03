@@ -9,7 +9,7 @@ import (
 	"encoding/binary"
 	"time"
 
-	"github.com/kitech/go-toxcore"
+	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/kitech/goplusplus"
 )
 
@@ -34,10 +34,6 @@ type Tunnelc struct {
 	clientReadyReadChan chan ClientReadyReadEvent
 	clientCloseChan     chan ClientCloseEvent
 	clientCheckACKChan  chan ClientCheckACKEvent
-	udpReadyReadChan    chan UdpReadyReadEvent
-
-	// multipath-udp
-	udpPeer net.PacketConn
 }
 
 func NewTunnelc() *Tunnelc {
@@ -54,20 +50,6 @@ func NewTunnelc() *Tunnelc {
 	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
 	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
 	t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
-
-	// multipath-udp
-	for i := 0; i < 5; i++ {
-		udpPeer, err := net.ListenPacket("udp", fmt.Sprintf(":%d", 18588+i))
-		if err != nil {
-			errl.Println(err, udpPeer)
-			if i == 4 {
-				panic(err)
-			}
-		} else {
-			this.udpPeer = udpPeer
-			break
-		}
-	}
 
 	//
 	return this
@@ -94,25 +76,25 @@ func (this *Tunnelc) serve() {
 	this.clientReadyReadChan = make(chan ClientReadyReadEvent, mpcsz)
 	this.clientCloseChan = make(chan ClientCloseEvent, mpcsz)
 	this.clientCheckACKChan = make(chan ClientCheckACKEvent, 0)
-	this.udpReadyReadChan = make(chan UdpReadyReadEvent, mpcsz)
 
 	// install pollers
 	go func() {
 		for {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(time.Duration(smuse.tox_interval) * time.Millisecond)
+			// time.Sleep(200 * time.Millisecond)
 			this.toxPollChan <- ToxPollEvent{}
 			// iterate(this.tox)
 		}
 	}()
 	go func() {
 		for {
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(time.Duration(smuse.kcp_interval) * time.Millisecond)
+			// time.Sleep(200 * time.Millisecond)
 			this.kcpPollChan <- KcpPollEvent{}
 			// this.serveKcp()
 		}
 	}()
 	go this.serveTcp()
-	go this.serveUdp()
 
 	// like event handler
 	for {
@@ -131,8 +113,6 @@ func (this *Tunnelc) serve() {
 			this.processClientReadyRead(evt.ch, evt.buf, evt.size)
 		case evt := <-this.clientCloseChan:
 			this.promiseChannelClose(evt.ch)
-		case evt := <-this.udpReadyReadChan:
-			this.processUdpReadyRead(evt.addr, evt.buf, evt.size)
 		case <-this.toxPollChan:
 			iterate(this.tox)
 		case <-this.kcpPollChan:
@@ -140,42 +120,6 @@ func (this *Tunnelc) serve() {
 		case evt := <-this.clientCheckACKChan:
 			this.clientCheckACKRecved(evt.ch)
 		}
-	}
-}
-
-//
-func (this *Tunnelc) serveUdp() {
-	info.Println("Listen UDP:", this.udpPeer.LocalAddr().String())
-
-	for {
-		buf := make([]byte, 1600)
-		n, addr, err := this.udpPeer.ReadFrom(buf)
-		if err != nil {
-			debug.Println(n, addr, err)
-		} else {
-			this.udpReadyReadChan <- UdpReadyReadEvent{addr, buf[0:n], n}
-		}
-	}
-}
-
-func (this *Tunnelc) processUdpReadyRead(addr net.Addr, buf []byte, size int) {
-	// info.Println(addr, string(buf), size)
-	debug.Println(addr, string(buf), size)
-	// kcp包前4字段为conv，little hacky
-	if len(buf) < 4 {
-		errl.Println("wtf")
-	}
-
-	// maybe check ping packet
-
-	// unpack kcp package
-	conv := binary.LittleEndian.Uint32(buf)
-	ch := this.chpool.pool2[conv]
-	if ch == nil {
-		errl.Println("maybe has some problem:", conv)
-	} else {
-		n := ch.kcp.Input(buf)
-		debug.Println("udp->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 	}
 }
 
@@ -193,6 +137,7 @@ func (this *Tunnelc) serveTcp() {
 			info.Println(err)
 		}
 		// info.Println(c)
+		info.Println("New connection from/to:", c.RemoteAddr(), c.LocalAddr())
 		this.newConnChan <- NewConnEvent{c, 0, time.Now()}
 		appevt.Trigger("newconn")
 	}
@@ -311,15 +256,6 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 		debug.Println("kcp->tox:", len(msg))
 	}
 
-	// multipath-udp backend
-	uaddr, err := net.ResolveUDPAddr("udp", outboundip)
-	if err != nil {
-		errl.Println(err, uaddr)
-	}
-	wrn, err := this.udpPeer.WriteTo(buf[:size], uaddr)
-	if err != nil {
-		errl.Println(err, wrn)
-	}
 }
 
 func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
@@ -416,11 +352,13 @@ func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra 
 	_, err := t.FriendByPublicKey(toxtunid)
 	if err != nil {
 		t.FriendAdd(toxtunid, "tuncli")
-		t.WriteSavedata(fname)
+		t.WriteSavedata(tox_savedata_fname)
 	}
 	info.Println("mytox status:", status)
 	if status == 0 {
 		switchServer(t)
+	} else {
+		addLiveBots(t)
 	}
 
 	if status == 0 {
@@ -468,22 +406,8 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 					ch.kcp.WndSize(128, 128)
 					ch.kcp.NoDelay(1, 10, 2, 1)
 				}
+				ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
 				this.chpool.putClientLacks(ch)
-
-				// send ping to udp
-				uaddr, err := net.ResolveUDPAddr("udp", outboundip)
-				if err != nil {
-					errl.Println(err, uaddr)
-				}
-				ch.udp_peer_addr = uaddr
-				uaddr, err = net.ResolveUDPAddr("udp", pkt.data)
-				if err != nil {
-					errl.Println(err)
-				} else {
-					ch.udp_peer_addr = uaddr
-				}
-				// wrn, err := this.udpPeer.WriteTo([]byte("hehehheheh"), uaddr)
-				// info.Println(wrn, err)
 
 				info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.data)
 				appevt.Trigger("connok")

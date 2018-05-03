@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -8,8 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/kitech/go-toxcore"
-
+	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/bitly/go-simplejson"
 )
 
@@ -22,16 +22,24 @@ var servers = []interface{}{
 	// "127.0.0.1", uint16(33445), "398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52",
 }
 
-var fname string
+var tox_savedata_fname string
+var tox_disable_udp = false
+
+func init() {
+	flag.BoolVar(&tox_disable_udp, "disable-udp", tox_disable_udp,
+		fmt.Sprintf("if tox disable udp, default: %v", tox_disable_udp))
+}
 
 func makeTox(name string) *tox.Tox {
-	fname = fmt.Sprintf("./%s.data", name)
+	tox_savedata_fname = fmt.Sprintf("./%s.data", name)
 	var nickPrefix = fmt.Sprintf("%s.", name)
 	var statusText = fmt.Sprintf("%s of toxtun", name)
 
 	opt := tox.NewToxOptions()
-	if tox.FileExist(fname) {
-		data, err := ioutil.ReadFile(fname)
+	opt.Udp_enabled = !tox_disable_udp
+
+	if tox.FileExist(tox_savedata_fname) {
+		data, err := ioutil.ReadFile(tox_savedata_fname)
 		if err != nil {
 			errl.Println(err)
 		} else {
@@ -41,7 +49,7 @@ func makeTox(name string) *tox.Tox {
 	}
 	port := 33445
 	var t *tox.Tox
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 71; i++ {
 		opt.Tcp_port = uint16(port)
 		// opt.Tcp_port = 0
 		t = tox.NewTox(opt)
@@ -90,7 +98,7 @@ func makeTox(name string) *tox.Tox {
 	debug.Println("savedata:", sz, t)
 	debug.Println("savedata", len(sd), t)
 
-	err = t.WriteSavedata(fname)
+	err = t.WriteSavedata(tox_savedata_fname)
 	debug.Println("savedata write:", err)
 
 	// add friend norequest
@@ -187,7 +195,7 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 	initThirdPartyNodes()
 	initToxNodes()
-	go pingNodes()
+	// go pingNodes()
 }
 
 // fixme: chown root.root toxtun-go && chmod u+s toxtun-go
@@ -312,3 +320,20 @@ type ByRand []ToxNode
 func (this ByRand) Len() int           { return len(this) }
 func (this ByRand) Swap(i, j int)      { this[i], this[j] = this[j], this[i] }
 func (this ByRand) Less(i, j int) bool { return rand.Int()%2 == 0 }
+
+var livebots = []string{
+	"56A1ADE4B65B86BCD51CC73E2CD4E542179F47959FE3E0E21B4B0ACDADE51855D34D34D37CB5", // groupbot
+	"76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335A235342C48A39218F515C39A6", //echobot@toxme.io
+	"DD7A68B345E0AA918F3544AA916B5CA6AED6DE80389BFF1EF7342DACD597943D62BDEED1FC67", // my echobot
+	"03F47F0AE26BE32C73579CBA2C5421A159EDFF74535A7E8C6480398D93A0EA2E02B1B20B80D7", // DobroBot
+	"A922A51E1C91205B9F7992E2273107D47C72E8AE909C61C28A77A4A2A115431B14592AB38A3B", // toxirc
+	"5EE85FD7B4B6BD8FD113A1E8CC5853A233008B574E07F2CC76A7EA43AE24AE0754DBD6B8FD3F", // ToxIRCBotCN
+	"415732B8A549B2A1F9A278B91C649B9E30F07330E8818246375D19E52F927C57F08A44E082F6", // LainBot
+	"398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC529FA90C343627", // envoy
+}
+
+func addLiveBots(t *tox.Tox) {
+	for _, botid := range livebots {
+		t.FriendAdd(botid, "hello")
+	}
+}

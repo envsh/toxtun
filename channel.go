@@ -51,16 +51,15 @@ func nextMsgid() uint64 {
 }
 
 type Channel struct {
-	state         int
-	conn          net.Conn
-	chidcli       int
-	chidsrv       int
-	ip            string
-	port          string
-	conv          uint32
-	toxid         string // 仅用于服务器端
-	kcp           *KCP
-	udp_peer_addr net.Addr
+	state   int
+	conn    net.Conn
+	chidcli int
+	chidsrv int
+	ip      string
+	port    string
+	conv    uint32
+	toxid   string // 仅用于服务器端
+	kcp     *KCP
 
 	// 关闭状态
 	client_socket_close bool

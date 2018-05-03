@@ -1,7 +1,13 @@
+# Setup the -ldflags option for go build here, interpolate the variable values
+LDFLAGS=-ldflags "-w -s -X main.Version=${VERSION} -X main.Build=${BUILD} -X main.Entry=main"
+GOVVV=`govvv -flags -version ${VERSION}|sed 's/=/=GOVVV-/g'`
+
+
 all: static dynamic
 
 dynamic:
-	go build -v .
+	PKG_CONFIG_PATH=/opt/toxcore-static2/lib64/pkgconfig CGO_LDFLAGS="-lopus -lsodium" \
+		go build -v -ldflags "${GOVVV}" .
 	mv toxtun-go toxtun
 
 # 静态编译libtoxcore与其依赖库

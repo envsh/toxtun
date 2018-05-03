@@ -30,15 +30,16 @@ func init() {
 }
 
 func main() {
+	printBuildInfo(true)
 	flag.Parse()
 	if len(config_file) > 0 {
 		config = NewTunnelConfig(config_file)
 		info.Println(config)
 	}
 
+	set_speed_mode(kcp_mode)
 	argv := flag.Args()
 	argc := len(argv)
-
 	if argc > 0 {
 		inst_mode = argv[argc-1]
 	}
