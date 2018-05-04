@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"net"
 	"runtime"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bitly/go-simplejson"
+	"github.com/vmihailenco/msgpack"
 )
 
 const (
@@ -27,9 +29,9 @@ const (
 	CMDSENDDATA = "send_data"
 )
 
-var chanid0 = 10000
+var chanid0 int = 10000
 var chanidlock sync.Mutex
-var msgid0 = uint64(10000)
+var msgid0 uint64 = 10000
 var msgidlock sync.Mutex
 
 func nextChanid() int {
@@ -97,34 +99,34 @@ func NewChannelWithId(chanid int) *Channel {
 
 func NewChannelFromPacket(pkt *Packet) *Channel {
 	ch := new(Channel)
-	ch.chidcli = pkt.chidcli
-	ch.chidsrv = pkt.chidsrv
-	ch.conv = pkt.conv
+	ch.chidcli = pkt.Chidcli
+	ch.chidsrv = pkt.Chidsrv
+	ch.conv = pkt.Conv
 
 	return ch
 }
 
 func (this *Channel) makeConnectSYNPacket() *Packet {
 	pkt := NewPacket(this, CMDCONNSYN, "")
-	pkt.conv = this.conv
+	pkt.Conv = this.conv
 	return pkt
 }
 
 func (this *Channel) makeConnectACKPacket() *Packet {
 	pkt := NewPacket(this, CMDCONNACK, "")
-	pkt.conv = this.conv
+	pkt.Conv = this.conv
 	return pkt
 }
 
 func (this *Channel) makeDataPacket(data string) *Packet {
 	pkt := NewPacket(this, CMDSENDDATA, data)
-	pkt.conv = this.conv
+	pkt.Conv = this.conv
 	return pkt
 }
 
 func (this *Channel) makeCloseFINPacket() *Packet {
 	pkt := NewPacket(this, CMDCLOSEFIN, "")
-	pkt.conv = this.conv
+	pkt.Conv = this.conv
 	return pkt
 }
 
@@ -243,52 +245,67 @@ func (this *ChannelPool) rmServer(ch *Channel) {
 }
 
 ////////////
-
+const pkt_use_fmt = "msgp" // "json"
 type Packet struct {
-	chidcli    int
-	chidsrv    int
-	command    string
-	data       string
-	remoteip   string
-	remoteport string
-	conv       uint32
-	msgid      uint64
+	Chidcli    int
+	Chidsrv    int
+	Command    string
+	Data       string
+	Remoteip   string
+	Remoteport string
+	Conv       uint32
+	Msgid      uint64
 }
 
 func NewPacket(ch *Channel, command string, data string) *Packet {
-	return &Packet{chidcli: ch.chidcli, chidsrv: ch.chidsrv, command: command, data: data,
-		remoteip: ch.ip, remoteport: ch.port, msgid: nextMsgid()}
+	return &Packet{Chidcli: ch.chidcli, Chidsrv: ch.chidsrv, Command: command, Data: data,
+		Remoteip: ch.ip, Remoteport: ch.port, Msgid: nextMsgid()}
 }
 
 func NewBrokenPacket(conv uint32) *Packet {
 	pkt := new(Packet)
-	pkt.conv = conv
-	pkt.msgid = nextMsgid()
+	pkt.Conv = conv
+	pkt.Msgid = nextMsgid()
 	return pkt
 }
 
 func (this *Packet) isconnsyn() bool {
-	return this.command == CMDCONNSYN
+	return this.Command == CMDCONNSYN
 }
 
 func (this *Packet) isconnack() bool {
-	return this.command == CMDCONNACK
+	return this.Command == CMDCONNACK
 }
 
 func (this *Packet) isdata() bool {
-	return this.command == CMDSENDDATA
+	return this.Command == CMDSENDDATA
 }
 
 func (this *Packet) toJson() []byte {
+	if pkt_use_fmt == "msgp" {
+		bcc, err := base64.StdEncoding.DecodeString(this.Data)
+		if err != nil {
+			info.Println(err)
+			return nil
+		} else {
+			nthis := *this
+			nthis.Data = string(bcc)
+			return nthis.toMsgPackImpl()
+		}
+	}
+	return this.toJsonImpl()
+}
+
+func (this *Packet) toJsonImpl() []byte {
 	jso := simplejson.New()
-	jso.Set(CMDKEYCHANIDCLIENT, this.chidcli)
-	jso.Set(CMDKEYCHANIDSERVER, this.chidsrv)
-	jso.Set(CMDKEYCOMMAND, this.command)
-	jso.Set(CMDKEYDATA, this.data)
-	jso.Set(CMDKEYREMIP, this.remoteip)
-	jso.Set(CMDKEYREMPORT, this.remoteport)
-	jso.Set(CMDKEYCONV, this.conv)
-	jso.Set(CMDKEYMSGID, this.msgid)
+	jso.Set(CMDKEYCHANIDCLIENT, this.Chidcli)
+	jso.Set(CMDKEYCHANIDSERVER, this.Chidsrv)
+	jso.Set(CMDKEYCOMMAND, this.Command)
+	jso.Set(CMDKEYDATA, this.Data)
+	jso.Set(CMDKEYREMIP, this.Remoteip)
+	jso.Set(CMDKEYREMPORT, this.Remoteport)
+	jso.Set(CMDKEYCONV, this.Conv)
+	jso.Set(CMDKEYMSGID, this.Msgid)
 
 	jsb, err := jso.Encode()
 	if err != nil {
@@ -298,20 +315,51 @@ func (this *Packet) toJson() []byte {
 }
 
 func parsePacket(buf []byte) *Packet {
+	if pkt_use_fmt == "msgp" {
+		pkt := parsePacketFromMsgPack(buf)
+		if pkt == nil {
+			return nil
+		}
+		npkt := *pkt
+		npkt.Data = base64.StdEncoding.EncodeToString([]byte(pkt.Data))
+		return &npkt
+	}
+	return parsePacketFromJson(buf)
+}
+
+func parsePacketFromJson(buf []byte) *Packet {
 	jso, err := simplejson.NewJson(buf)
 	if err != nil {
 		return nil
 	}
 
 	pkt := new(Packet)
-	pkt.chidcli = jso.Get(CMDKEYCHANIDCLIENT).MustInt()
-	pkt.chidsrv = jso.Get(CMDKEYCHANIDSERVER).MustInt()
-	pkt.command = jso.Get(CMDKEYCOMMAND).MustString()
-	pkt.data = jso.Get(CMDKEYDATA).MustString()
-	pkt.remoteip = jso.Get(CMDKEYREMIP).MustString()
-	pkt.remoteport = jso.Get(CMDKEYREMPORT).MustString()
-	pkt.conv = uint32(jso.Get(CMDKEYCONV).MustUint64())
-	pkt.msgid = jso.Get(CMDKEYMSGID).MustUint64()
+	pkt.Chidcli = jso.Get(CMDKEYCHANIDCLIENT).MustInt()
+	pkt.Chidsrv = jso.Get(CMDKEYCHANIDSERVER).MustInt()
+	pkt.Command = jso.Get(CMDKEYCOMMAND).MustString()
+	pkt.Data = jso.Get(CMDKEYDATA).MustString()
+	pkt.Remoteip = jso.Get(CMDKEYREMIP).MustString()
+	pkt.Remoteport = jso.Get(CMDKEYREMPORT).MustString()
+	pkt.Conv = uint32(jso.Get(CMDKEYCONV).MustUint64())
+	pkt.Msgid = jso.Get(CMDKEYMSGID).MustUint64()
 
 	return pkt
+}
+
+// msgpack
+func (this *Packet) toMsgPackImpl() []byte {
+	pkt, err := msgpack.Marshal(this)
+	if err != nil {
+		return nil
+	}
+	return pkt
+}
+
+func parsePacketFromMsgPack(buf []byte) *Packet {
+	pkto := &Packet{}
+	err := msgpack.Unmarshal(buf, pkto)
+	if err != nil {
+		return nil
+	}
+	return pkto
 }

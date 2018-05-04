@@ -238,9 +238,9 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	pkt := parsePacket(buf)
 	if pkt.isconnack() {
 	} else if pkt.isdata() {
-		ch := this.chpool.pool[pkt.chidsrv]
-		debug.Println("processing channel data:", ch.chidsrv, len(pkt.data), gopp.StrSuf(pkt.data, 52))
-		buf, err := base64.StdEncoding.DecodeString(pkt.data)
+		ch := this.chpool.pool[pkt.Chidsrv]
+		debug.Println("processing channel data:", ch.chidsrv, len(pkt.Data), gopp.StrSuf(pkt.Data, 52))
+		buf, err := base64.StdEncoding.DecodeString(pkt.Data)
 		if err != nil {
 			errl.Println(err)
 		}
@@ -409,7 +409,7 @@ func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 		// friendInChannel?
 		switchServer(t)
 	}
-
+	livebotsOnFriendConnectionStatus(t, friendNumber, status)
 	if status == 0 {
 		appevt.Trigger("peeronline", false)
 		appevt.Trigger("peeroffline")
@@ -421,7 +421,7 @@ func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 // a tool function
 func (this *Tunneld) makeKcpConv(friendId string, pkt *Packet) uint32 {
 	// crc32: toxid+host+port+time
-	data := fmt.Sprintf("%s@%s:%s@%d", friendId, pkt.remoteip, pkt.remoteport,
+	data := fmt.Sprintf("%s@%s:%s@%d", friendId, pkt.Remoteip, pkt.Remoteport,
 		time.Now().UnixNano())
 	conv := crc32.ChecksumIEEE(bytes.NewBufferString(data).Bytes())
 	return conv
@@ -435,13 +435,13 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 
 	pkt := parsePacket(bytes.NewBufferString(message).Bytes())
 	if pkt == nil {
-		info.Println("maybe not command, just normal message")
+		info.Println("maybe not command, just normal message", gopp.StrSuf(message, 52))
 	} else {
-		if pkt.command == CMDCONNSYN {
-			ch := NewChannelWithId(pkt.chidcli)
+		if pkt.Command == CMDCONNSYN {
+			ch := NewChannelWithId(pkt.Chidcli)
 			ch.conv = this.makeKcpConv(friendId, pkt)
-			ch.ip = pkt.remoteip
-			ch.port = pkt.remoteport
+			ch.ip = pkt.Remoteip
+			ch.port = pkt.Remoteport
 			ch.toxid = friendId
 			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 			ch.kcp.SetMtu(tunmtu)
@@ -452,17 +452,17 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 
 			go this.connectToBackend(ch)
 
-		} else if pkt.command == CMDCLOSEFIN {
-			if ch, ok := this.chpool.pool2[pkt.conv]; ok {
-				info.Println("recv client close fin,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
+		} else if pkt.Command == CMDCLOSEFIN {
+			if ch, ok := this.chpool.pool2[pkt.Conv]; ok {
+				info.Println("recv client close fin,", ch.chidcli, ch.chidsrv, ch.conv, pkt.Msgid)
 				ch.client_socket_close = true
 				this.promiseChannelClose(ch)
 			} else {
 				info.Println("recv client close fin, but maybe server already closed",
-					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv, pkt.msgid)
+					pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv, pkt.Msgid)
 			}
 		} else {
-			errl.Println("wtf, unknown cmmand:", pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
+			errl.Println("wtf, unknown cmmand:", pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
 		}
 
 	}

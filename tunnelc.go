@@ -231,7 +231,7 @@ func (this *Tunnelc) processKcpReadyRead(ch *Channel) {
 
 	pkt := parsePacket(buf)
 	if pkt.isdata() {
-		ch := this.chpool.pool[pkt.chidcli]
+		ch := this.chpool.pool[pkt.Chidcli]
 		this.copyServer2Client(ch, pkt)
 	} else {
 		panic(123)
@@ -333,8 +333,8 @@ func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 }
 
 func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
-	debug.Println("processing channel data:", ch.chidcli, gopp.StrSuf(pkt.data, 52))
-	buf, err := base64.StdEncoding.DecodeString(pkt.data)
+	debug.Println("processing channel data:", ch.chidcli, gopp.StrSuf(pkt.Data, 52))
+	buf, err := base64.StdEncoding.DecodeString(pkt.Data)
 	if err != nil {
 		errl.Println(err)
 	}
@@ -344,7 +344,7 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 		debug.Println(err)
 	} else {
 		debug.Println("kcp->cli:", wn)
-		appevt.Trigger("respbytes", wn, len(pkt.data)+25)
+		appevt.Trigger("respbytes", wn, len(pkt.Data)+25)
 	}
 }
 
@@ -405,12 +405,12 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
 	pkt := parsePacket(bytes.NewBufferString(message).Bytes())
 	if pkt == nil {
-		info.Println("maybe not command, just normal message")
+		info.Println("maybe not command, just normal message:", gopp.StrSuf(message, 52))
 	} else {
-		if pkt.command == CMDCONNACK {
-			if ch, ok := this.chpool.pool[pkt.chidcli]; ok {
-				ch.conv = pkt.conv
-				ch.chidsrv = pkt.chidsrv
+		if pkt.Command == CMDCONNACK {
+			if ch, ok := this.chpool.pool[pkt.Chidcli]; ok {
+				ch.conv = pkt.Conv
+				ch.chidsrv = pkt.Chidsrv
 				ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 				ch.kcp.SetMtu(tunmtu)
 				if kcp_mode == "fast" {
@@ -420,34 +420,34 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
 				this.chpool.putClientLacks(ch)
 
-				info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.data)
+				info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.Data)
 				appevt.Trigger("connok")
 				appevt.Trigger("connact", 1)
 				ch.conn_ack_recved = true
 				// can read now，不能阻塞，开新的goroutine
 				go this.pollClientReadyRead(ch)
 			} else {
-				info.Println("maybe conn ack response timeout", pkt.chidcli, pkt.chidsrv, pkt.conv)
+				info.Println("maybe conn ack response timeout", pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
 				// TODO 应该给服务器回个关闭包
 				ch := NewChannelFromPacket(pkt)
 				newpkt := ch.makeCloseFINPacket()
 				this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
 			}
-		} else if pkt.command == CMDCLOSEFIN {
-			if ch, ok := this.chpool.pool2[pkt.conv]; ok {
+		} else if pkt.Command == CMDCLOSEFIN {
+			if ch, ok := this.chpool.pool2[pkt.Conv]; ok {
 				ch.server_socket_close = true
 				this.promiseChannelClose(ch)
-			} else if ch, ok := this.chpool.pool[pkt.chidcli]; ok {
+			} else if ch, ok := this.chpool.pool[pkt.Chidcli]; ok {
 				info.Println("maybe server connection failed",
-					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
+					pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
 				// this.connectFailedClean(ch)
 				this.promiseChannelClose(ch)
 			} else {
 				info.Println("recv server close, but maybe client already closed",
-					pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
+					pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
 			}
 		} else {
-			errl.Println("wtf, unknown cmmand:", pkt.command, pkt.chidcli, pkt.chidsrv, pkt.conv)
+			errl.Println("wtf, unknown cmmand:", pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
 		}
 	}
 }

@@ -1,0 +1,40 @@
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/GianlucaGuarini/go-observable"
+
+[[constraint]]
+  name = "github.com/TokTok/go-toxcore-c"
+  version = "0.2.0"
+
+[[constraint]]
+  name = "github.com/bitly/go-simplejson"
+  version = "0.5.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/cyfdecyf/color"
+
+[[constraint]]
+  name = "github.com/go-ini/ini"
+  version = "1.36.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/kitech/goplusplus"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/tatsushid/go-fastping"
+
+[[constraint]]
+  name = "github.com/vmihailenco/msgpack"
+  version = "3.3.1"
+
+[[constraint]]
+  branch = "master"
+  name = "golang.org/x/net"
+
+[prune]
+  go-tests = true
+  unused-packages = true
