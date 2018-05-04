@@ -17,6 +17,7 @@ var (
 )
 
 type TunnelRecord struct {
+	rname   string
 	lhost   string
 	lport   int
 	rhost   string
@@ -50,6 +51,7 @@ func NewTunnelConfig(cfg_file string) *TunnelConfig {
 		line := cli_val.String()
 
 		rec := parseRecordLine(line)
+		rec.rname = key
 		recs = append(recs, rec)
 	}
 
@@ -71,7 +73,7 @@ func parseRecordLine(line string) TunnelRecord {
 	}
 
 	return TunnelRecord{
-		lhost, lport, rhost, rport, rpubkey,
+		"", lhost, lport, rhost, rport, rpubkey,
 	}
 }
 

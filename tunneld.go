@@ -54,7 +54,6 @@ func NewTunneld() *Tunneld {
 
 func (this *Tunneld) serve() {
 
-	mpcsz := 256
 	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
 	// this.toxReadyReadChan = make(chan ToxReadyReadEvent, 0)
 	// this.toxMessageChan = make(chan ToxMessageEvent, 0)
@@ -385,6 +384,7 @@ func (this *Tunneld) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra 
 		switchServer(t)
 	} else {
 		addLiveBots(t)
+		t.WriteSavedata(tox_savedata_fname)
 	}
 
 	if status == 0 {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	// "strings"
 	"bytes"
@@ -64,8 +65,9 @@ func (this *Tunnelc) serve() {
 	}
 	this.srv = srv
 	info.Println("tunaddr:", srv.Addr().String())
+	rec := config.recs[0]
+	this.tox.SelfSetStatusMessage(fmt.Sprintf("%s of toxtun, %+v", "toxtunc", rec))
 
-	mpcsz := 256
 	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
 	// this.toxReadyReadChan = make(chan ToxReadyReadEvent, 0)
 	// this.toxMessageChan = make(chan ToxMessageEvent, 0)
@@ -349,9 +351,15 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 //////////////
 func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra interface{}) {
 	toxtunid := config.recs[0].rpubkey
-	_, err := t.FriendByPublicKey(toxtunid)
+	friendNumber, err := t.FriendByPublicKey(toxtunid)
+	log.Println(friendNumber, err)
+	if err == nil {
+		if false {
+			t.FriendDelete(friendNumber)
+		}
+	}
 	if err != nil {
-		t.FriendAdd(toxtunid, "tuncli")
+		t.FriendAdd(toxtunid, "hello, i'am tuncli")
 		t.WriteSavedata(tox_savedata_fname)
 	}
 	info.Println("mytox status:", status)
@@ -359,6 +367,7 @@ func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra 
 		switchServer(t)
 	} else {
 		addLiveBots(t)
+		t.WriteSavedata(tox_savedata_fname)
 	}
 
 	if status == 0 {
@@ -381,6 +390,8 @@ func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 			switchServer(t)
 		}
 	}
+
+	livebotsOnFriendConnectionStatus(t, friendNumber, status)
 
 	if status == 0 {
 		appevt.Trigger("peeronline", false)

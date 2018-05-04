@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"sort"
+	"strings"
 	"time"
 
 	tox "github.com/TokTok/go-toxcore-c"
@@ -61,16 +62,21 @@ func makeTox(name string) *tox.Tox {
 	if t == nil {
 		panic(nil)
 	}
-	info.Println("TCP port:", opt.Tcp_port)
+	if tox_disable_udp {
+		info.Println("TCP port:", opt.Tcp_port)
+	} else {
+		info.Println("TCP port:", "disabled")
+	}
 	if false {
 		time.Sleep(1 * time.Hour)
 	}
 
 	for i := 0; i < len(servers)/3; i++ {
 		r := i * 3
-		r1, err := t.Bootstrap(servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string))
-		r2, err := t.AddTcpRelay(servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string))
-		info.Println("bootstrap:", r1, err, r2, i, r)
+		ipstr, port, pubkey := servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string)
+		r1, err := t.Bootstrap(ipstr, port, pubkey)
+		r2, err := t.AddTcpRelay(ipstr, port, pubkey)
+		info.Println("bootstrap:", r1, err, r2, i, r, ipstr, port)
 	}
 
 	pubkey := t.SelfGetPublicKey()
@@ -335,5 +341,12 @@ var livebots = []string{
 func addLiveBots(t *tox.Tox) {
 	for _, botid := range livebots {
 		t.FriendAdd(botid, "hello")
+	}
+}
+
+func livebotsOnFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status int) {
+	fid, _ := t.FriendGetPublicKey(friendNumber)
+	if strings.HasPrefix(livebots[5], fid) {
+		t.FriendSendMessage(friendNumber, "/mute on")
 	}
 }

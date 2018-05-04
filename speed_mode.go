@@ -49,9 +49,10 @@ var smuse = SMTcp
 
 func set_speed_mode(mode string) {
 	switch mode {
-	case "default":
-		fallthrough
 	default:
+		info.Printf("%s mode not found, use default\n", mode)
+		fallthrough
+	case "default":
 		smuse = SMTcp
 	case "normal":
 		smuse = SMNormal
@@ -62,4 +63,6 @@ func set_speed_mode(mode string) {
 	case "fast3":
 		smuse = SMFast3
 	}
+
+	info.Println("switch to kcp-mode:", smuse.name)
 }

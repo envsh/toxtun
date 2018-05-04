@@ -8,7 +8,7 @@ import (
 
 const (
 	tunconv = uint32(0xaabbccdd)
-	tunmtu  = 1000
+	tunmtu  = 1300 // mtu+IKCP_OVERHEAD<tox.MAX_MESSAGE_LENGTH
 	rdbufsz = 8192
 )
 
@@ -21,7 +21,7 @@ var (
 )
 
 func init() {
-	flag.StringVar(&kcp_mode, "kcp-mode", "fast", "default|fast")
+	flag.StringVar(&kcp_mode, "kcp-mode", "fast", "default|normal|fast|fast2|fast3")
 	if !(kcp_mode == "default" || kcp_mode == "fast") {
 		kcp_mode = "fast"
 	}
