@@ -108,25 +108,25 @@ func NewChannelFromPacket(pkt *Packet) *Channel {
 }
 
 func (this *Channel) makeConnectSYNPacket() *Packet {
-	pkt := NewPacket(this, CMDCONNSYN, "")
+	pkt := NewPacket(this, CMDCONNSYN, []byte(""))
 	pkt.Conv = this.conv
 	return pkt
 }
 
 func (this *Channel) makeConnectACKPacket() *Packet {
-	pkt := NewPacket(this, CMDCONNACK, "")
+	pkt := NewPacket(this, CMDCONNACK, []byte(""))
 	pkt.Conv = this.conv
 	return pkt
 }
 
-func (this *Channel) makeDataPacket(data string) *Packet {
+func (this *Channel) makeDataPacket(data []byte) *Packet {
 	pkt := NewPacket(this, CMDSENDDATA, data)
 	pkt.Conv = this.conv
 	return pkt
 }
 
 func (this *Channel) makeCloseFINPacket() *Packet {
-	pkt := NewPacket(this, CMDCLOSEFIN, "")
+	pkt := NewPacket(this, CMDCLOSEFIN, []byte(""))
 	pkt.Conv = this.conv
 	return pkt
 }
@@ -246,18 +246,8 @@ func (this *ChannelPool) rmServer(ch *Channel) {
 }
 
 ////////////
-const pkt_use_fmt = "protobuf" // "msgpack" // "json" // "protobuf"
+const pkt_use_fmt = "json" // "msgpack" // "json" // "protobuf"
 type Packet struct {
-	/*
-		Chidcli    int
-		Chidsrv    int
-		Command    string
-		Data       string
-		Remoteip   string
-		Remoteport string
-		Conv       uint32
-		Msgid      uint64
-	*/
 	Version    int32  `protobuf:"varint,1,opt,name=Version" json:"ver,omitempty" msgpack:"ver,omitempty"`
 	Chidcli    int32  `protobuf:"varint,2,opt,name=Chidcli" json:"ccid,omitempty" msgpack:"ccid,omitempty"`
 	Chidsrv    int32  `protobuf:"varint,3,opt,name=Chidsrv" json:"scid,omitempty" msgpack:"scid,omitempty"`
@@ -267,7 +257,7 @@ type Packet struct {
 	Conv       uint32 `protobuf:"varint,7,opt,name=Conv" json:"conv,omitempty" msgpack:"conv,omitempty"`
 	Msgid      uint64 `protobuf:"varint,8,opt,name=Msgid" json:"mid,omitempty" msgpack:"mid,omitempty"`
 	Compress   bool   `protobuf:"varint,9,opt,name=Compress" json:"cpr,omitempty" msgpack:"cpr,omitempty"`
-	Data       string `protobuf:"bytes,10,opt,name=Data" json:"dat,omitempty" msgpack:"dat,omitempty"`
+	Data       []byte `protobuf:"bytes,10,opt,name=Data" json:"dat,omitempty" msgpack:"dat,omitempty"`
 }
 
 // proto.Message interface methods
@@ -275,7 +265,7 @@ func (m *Packet) Reset()         { *m = Packet{} }
 func (m *Packet) String() string { return proto.CompactTextString(m) }
 func (*Packet) ProtoMessage()    {}
 
-func NewPacket(ch *Channel, command string, data string) *Packet {
+func NewPacket(ch *Channel, command string, data []byte) *Packet {
 	return &Packet{Chidcli: ch.chidcli, Chidsrv: ch.chidsrv, Command: command, Data: data,
 		Remoteip: ch.ip, Remoteport: ch.port, Msgid: nextMsgid()}
 }
@@ -300,16 +290,12 @@ func (this *Packet) isdata() bool {
 }
 
 func (this *Packet) toJson() []byte {
+	if this.isdata() { // not need this info anymore
+		this.Remoteip = ""
+		this.Remoteport = ""
+	}
 	if pkt_use_fmt == "msgpack" {
-		bcc, err := base64.StdEncoding.DecodeString(this.Data)
-		if err != nil {
-			info.Println(err)
-			return nil
-		} else {
-			nthis := *this
-			nthis.Data = string(bcc)
-			return nthis.toMsgPackImpl()
-		}
+		return this.toMsgPackImpl()
 	} else if pkt_use_fmt == "protobuf" {
 		return this.toProtobufImpl()
 	}
@@ -322,8 +308,10 @@ func (this *Packet) toJsonImpl() []byte {
 	jso.Set(CMDKEYCHANIDSERVER, this.Chidsrv)
 	jso.Set(CMDKEYCOMMAND, this.Command)
 	jso.Set(CMDKEYDATA, this.Data)
-	jso.Set(CMDKEYREMIP, this.Remoteip)
-	jso.Set(CMDKEYREMPORT, this.Remoteport)
+	if !this.isdata() {
+		jso.Set(CMDKEYREMIP, this.Remoteip)
+		jso.Set(CMDKEYREMPORT, this.Remoteport)
+	}
 	jso.Set(CMDKEYCONV, this.Conv)
 	jso.Set(CMDKEYMSGID, this.Msgid)
 
@@ -341,9 +329,7 @@ func parsePacket(buf []byte) *Packet {
 		if pkt == nil {
 			return nil
 		}
-		npkt := *pkt
-		npkt.Data = base64.StdEncoding.EncodeToString([]byte(pkt.Data))
-		return &npkt
+		return pkt
 	} else if pkt_use_fmt == "protobuf" {
 		pkt := parsePacketFromProtobuf(buf)
 		if pkt == nil {
@@ -365,11 +351,14 @@ func parsePacketFromJson(buf []byte) *Packet {
 	pkt.Chidcli = int32(jso.Get(CMDKEYCHANIDCLIENT).MustInt())
 	pkt.Chidsrv = int32(jso.Get(CMDKEYCHANIDSERVER).MustInt())
 	pkt.Command = jso.Get(CMDKEYCOMMAND).MustString()
-	pkt.Data = jso.Get(CMDKEYDATA).MustString()
-	pkt.Remoteip = jso.Get(CMDKEYREMIP).MustString()
-	pkt.Remoteport = jso.Get(CMDKEYREMPORT).MustString()
+	if !pkt.isdata() {
+		pkt.Remoteip = jso.Get(CMDKEYREMIP).MustString()
+		pkt.Remoteport = jso.Get(CMDKEYREMPORT).MustString()
+	}
 	pkt.Conv = uint32(jso.Get(CMDKEYCONV).MustUint64())
 	pkt.Msgid = jso.Get(CMDKEYMSGID).MustUint64()
+	// pkt.Data = jso.Get(CMDKEYDATA).MustString()
+	pkt.Data, _ = base64.StdEncoding.DecodeString(jso.Get(CMDKEYDATA).MustString())
 
 	return pkt
 }

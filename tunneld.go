@@ -5,7 +5,6 @@ import (
 	"math"
 	// "log"
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
 	"hash/crc32"
 	"net"
@@ -239,12 +238,9 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	if pkt.isconnack() {
 	} else if pkt.isdata() {
 		ch := this.chpool.pool[pkt.Chidsrv]
-		debug.Println("processing channel data:", ch.chidsrv, len(pkt.Data), gopp.StrSuf(pkt.Data, 52))
-		buf, err := base64.StdEncoding.DecodeString(pkt.Data)
-		if err != nil {
-			errl.Println(err)
-		}
+		debug.Println("processing channel data:", ch.chidsrv, len(pkt.Data), gopp.StrSuf(string(pkt.Data), 52))
 
+		buf := pkt.Data
 		wn, err := ch.conn.Write(buf)
 		if err != nil {
 			errl.Println(err)
@@ -321,7 +317,7 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 }
 
 func (this *Tunneld) processServerReadyRead(ch *Channel, buf []byte, size int) {
-	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
+	sbuf := buf
 	pkt := ch.makeDataPacket(sbuf)
 	sn := ch.kcp.Send(pkt.toJson())
 	debug.Println("srv->kcp:", sn, size)

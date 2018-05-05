@@ -6,7 +6,6 @@ import (
 	"net"
 	// "strings"
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
 	"time"
 
@@ -325,7 +324,7 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 }
 
 func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
-	sbuf := base64.StdEncoding.EncodeToString(buf[:size])
+	sbuf := buf
 	pkt := ch.makeDataPacket(sbuf)
 	sn := ch.kcp.Send(pkt.toJson())
 	debug.Println("cli->kcp:", sn, ch.conv)
@@ -333,12 +332,9 @@ func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 }
 
 func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
-	debug.Println("processing channel data:", ch.chidcli, gopp.StrSuf(pkt.Data, 52))
-	buf, err := base64.StdEncoding.DecodeString(pkt.Data)
-	if err != nil {
-		errl.Println(err)
-	}
+	debug.Println("processing channel data:", ch.chidcli, gopp.StrSuf(string(pkt.Data), 52))
 
+	buf := pkt.Data
 	wn, err := ch.conn.Write(buf)
 	if err != nil {
 		debug.Println(err)

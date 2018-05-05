@@ -3,7 +3,7 @@ LDFLAGS=-ldflags "-w -s -X main.Version=${VERSION} -X main.Build=${BUILD} -X mai
 GOVVV=`govvv -flags -version ${VERSION}|sed 's/=/=GOVVV-/g'`
 
 
-all: static dynamic
+all: dynamic
 
 dynamic:
 	protoc --go_out=plugins=:. *.proto
