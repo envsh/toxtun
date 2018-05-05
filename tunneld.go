@@ -134,7 +134,7 @@ func kcp_poll(pool map[int32]*Channel) (chks []*Channel, nxtss []uint32) {
 			continue
 		}
 		curts := uint32(iclock())
-		rts := ch.kcp.Check(curts)
+		rts := ch.kcp.Check()
 		if rts == curts {
 			nxtss = append(nxtss, 10)
 			chks = append(chks, ch)
@@ -164,7 +164,7 @@ func (this *Tunneld) serveKcp() {
 				continue
 			}
 
-			ch.kcp.Update(uint32(iclock()))
+			ch.kcp.Update()
 
 			n := ch.kcp.Recv(zbuf)
 			switch n {
@@ -475,7 +475,7 @@ func (this *Tunneld) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 		if ch == nil {
 			info.Println("channel not found, maybe has some problem, maybe closed", conv)
 		} else {
-			n := ch.kcp.Input(buf)
+			n := ch.kcp.Input(buf, true)
 			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 		}
 	} else {
@@ -497,7 +497,7 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 		if ch == nil {
 			errl.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		} else {
-			n := ch.kcp.Input(buf)
+			n := ch.kcp.Input(buf, true)
 			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 		}
 	} else {
