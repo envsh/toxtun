@@ -31,7 +31,7 @@ const (
 )
 
 // Output is a closure which captures conn and calls conn.Write
-type Output func(buf []byte, size int, extra interface{})
+type output_callback func(buf []byte, size int, extra interface{})
 
 /* encode 8 bits unsigned int */
 func ikcp_encode8u(p []byte, c byte) []byte {
@@ -72,17 +72,15 @@ func ikcp_decode32u(p []byte, l *uint32) []byte {
 func _imin_(a, b uint32) uint32 {
 	if a <= b {
 		return a
-	} else {
-		return b
 	}
+	return b
 }
 
 func _imax_(a, b uint32) uint32 {
 	if a >= b {
 		return a
-	} else {
-		return b
 	}
+	return b
 }
 
 func _ibound_(lower, middle, upper uint32) uint32 {
@@ -93,32 +91,33 @@ func _itimediff(later, earlier uint32) int32 {
 	return (int32)(later - earlier)
 }
 
-// Segment defines a KCP segment
-type Segment struct {
+// segment defines a KCP segment
+type segment struct {
 	conv     uint32
-	cmd      uint32
-	frg      uint32
-	wnd      uint32
+	cmd      uint8
+	frg      uint8
+	wnd      uint16
 	ts       uint32
 	sn       uint32
 	una      uint32
-	resendts uint32
 	rto      uint32
-	fastack  uint32
 	xmit     uint32
+	resendts uint32
+	fastack  uint32
 	data     []byte
 }
 
 // encode a segment into buffer
-func (seg *Segment) encode(ptr []byte) []byte {
+func (seg *segment) encode(ptr []byte) []byte {
 	ptr = ikcp_encode32u(ptr, seg.conv)
-	ptr = ikcp_encode8u(ptr, uint8(seg.cmd))
-	ptr = ikcp_encode8u(ptr, uint8(seg.frg))
-	ptr = ikcp_encode16u(ptr, uint16(seg.wnd))
+	ptr = ikcp_encode8u(ptr, seg.cmd)
+	ptr = ikcp_encode8u(ptr, seg.frg)
+	ptr = ikcp_encode16u(ptr, seg.wnd)
 	ptr = ikcp_encode32u(ptr, seg.ts)
 	ptr = ikcp_encode32u(ptr, seg.sn)
 	ptr = ikcp_encode32u(ptr, seg.una)
 	ptr = ikcp_encode32u(ptr, uint32(len(seg.data)))
+	atomic.AddUint64(&DefaultSnmp.OutSegs, 1)
 	return ptr
 }
 
@@ -127,9 +126,10 @@ type KCP struct {
 	conv, mtu, mss, state                  uint32
 	snd_una, snd_nxt, rcv_nxt              uint32
 	ssthresh                               uint32
-	rx_rttval, rx_srtt, rx_rto, rx_minrto  uint32
+	rx_rttvar, rx_srtt                     int32
+	rx_rto, rx_minrto                      uint32
 	snd_wnd, rcv_wnd, rmt_wnd, cwnd, probe uint32
-	interval, ts_flush, xmit               uint32
+	interval, ts_flush                     uint32
 	nodelay, updated                       uint32
 	ts_probe, probe_wait                   uint32
 	dead_link, incr                        uint32
@@ -137,15 +137,15 @@ type KCP struct {
 	fastresend     int32
 	nocwnd, stream int32
 
-	snd_queue []Segment
-	rcv_queue []Segment
-	snd_buf   []Segment
-	rcv_buf   []Segment
+	snd_queue []segment
+	rcv_queue []segment
+	snd_buf   []segment
+	rcv_buf   []segment
 
 	acklist []ackItem
 
 	buffer []byte
-	output Output
+	output output_callback
 
 	// user data
 	extra interface{}
@@ -158,7 +158,7 @@ type ackItem struct {
 
 // NewKCP create a new kcp control object, 'conv' must equal in two endpoint
 // from the same connection.
-func NewKCP(conv uint32, output Output, extra interface{}) *KCP {
+func NewKCP(conv uint32, output output_callback, extra interface{}) *KCP {
 	kcp := new(KCP)
 	kcp.conv = conv
 	kcp.snd_wnd = IKCP_WND_SND
@@ -179,20 +179,13 @@ func NewKCP(conv uint32, output Output, extra interface{}) *KCP {
 }
 
 // newSegment creates a KCP segment
-func (kcp *KCP) newSegment(size int) *Segment {
-	seg := new(Segment)
-	b := xmitBuf.Get().([]byte)
-	if cap(b) < size {
-		seg.data = make([]byte, size*2)
-	} else {
-		seg.data = b[:size]
-	}
-	// seg.data = xmitBuf.Get().([]byte)[:size]
-	return seg
+func (kcp *KCP) newSegment(size int) (seg segment) {
+	seg.data = xmitBuf.Get().([]byte)[:size]
+	return
 }
 
 // delSegment recycles a KCP segment
-func (kcp *KCP) delSegment(seg *Segment) {
+func (kcp *KCP) delSegment(seg segment) {
 	xmitBuf.Put(seg.data)
 }
 
@@ -249,12 +242,14 @@ func (kcp *KCP) Recv(buffer []byte) (n int) {
 		buffer = buffer[len(seg.data):]
 		n += len(seg.data)
 		count++
-		kcp.delSegment(seg)
+		kcp.delSegment(*seg)
 		if seg.frg == 0 {
 			break
 		}
 	}
-	kcp.rcv_queue = kcp.rcv_queue[count:]
+	if count > 0 {
+		kcp.rcv_queue = kcp.remove_front(kcp.rcv_queue, count)
+	}
 
 	// move available data from rcv_buf -> rcv_queue
 	count = 0
@@ -267,8 +262,11 @@ func (kcp *KCP) Recv(buffer []byte) (n int) {
 			break
 		}
 	}
-	kcp.rcv_queue = append(kcp.rcv_queue, kcp.rcv_buf[:count]...)
-	kcp.rcv_buf = kcp.rcv_buf[count:]
+
+	if count > 0 {
+		kcp.rcv_queue = append(kcp.rcv_queue, kcp.rcv_buf[:count]...)
+		kcp.rcv_buf = kcp.remove_front(kcp.rcv_buf, count)
+	}
 
 	// fast recover
 	if len(kcp.rcv_queue) < int(kcp.rcv_wnd) && fast_recover {
@@ -290,20 +288,20 @@ func (kcp *KCP) Send(buffer []byte) int {
 	if kcp.stream != 0 {
 		n := len(kcp.snd_queue)
 		if n > 0 {
-			old := &kcp.snd_queue[n-1]
-			if len(old.data) < int(kcp.mss) {
-				capacity := int(kcp.mss) - len(old.data)
+			seg := &kcp.snd_queue[n-1]
+			if len(seg.data) < int(kcp.mss) {
+				capacity := int(kcp.mss) - len(seg.data)
 				extend := capacity
 				if len(buffer) < capacity {
 					extend = len(buffer)
 				}
-				seg := kcp.newSegment(len(old.data) + extend)
-				seg.frg = 0
-				copy(seg.data, old.data)
-				copy(seg.data[len(old.data):], buffer)
+
+				// grow slice, the underlying cap is guaranteed to
+				// be larger than kcp.mss
+				oldlen := len(seg.data)
+				seg.data = seg.data[:oldlen+extend]
+				copy(seg.data[oldlen:], buffer)
 				buffer = buffer[extend:]
-				kcp.delSegment(old)
-				kcp.snd_queue[n-1] = *seg
 			}
 		}
 
@@ -336,11 +334,11 @@ func (kcp *KCP) Send(buffer []byte) int {
 		seg := kcp.newSegment(size)
 		copy(seg.data, buffer[:size])
 		if kcp.stream == 0 { // message mode
-			seg.frg = uint32(count - i - 1)
+			seg.frg = uint8(count - i - 1)
 		} else { // stream mode
 			seg.frg = 0
 		}
-		kcp.snd_queue = append(kcp.snd_queue, *seg)
+		kcp.snd_queue = append(kcp.snd_queue, seg)
 		buffer = buffer[size:]
 	}
 	return 0
@@ -350,20 +348,24 @@ func (kcp *KCP) update_ack(rtt int32) {
 	// https://tools.ietf.org/html/rfc6298
 	var rto uint32
 	if kcp.rx_srtt == 0 {
-		kcp.rx_srtt = uint32(rtt)
-		kcp.rx_rttval = uint32(rtt) / 2
+		kcp.rx_srtt = rtt
+		kcp.rx_rttvar = rtt >> 1
 	} else {
-		delta := rtt - int32(kcp.rx_srtt)
+		delta := rtt - kcp.rx_srtt
+		kcp.rx_srtt += delta >> 3
 		if delta < 0 {
 			delta = -delta
 		}
-		kcp.rx_rttval = (3*kcp.rx_rttval + uint32(delta)) / 4
-		kcp.rx_srtt = (7*kcp.rx_srtt + uint32(rtt)) / 8
-		if kcp.rx_srtt < 1 {
-			kcp.rx_srtt = 1
+		if rtt < kcp.rx_srtt-kcp.rx_rttvar {
+			// if the new RTT sample is below the bottom of the range of
+			// what an RTT measurement is expected to be.
+			// give an 8x reduced weight versus its normal weighting
+			kcp.rx_rttvar += (delta - kcp.rx_rttvar) >> 5
+		} else {
+			kcp.rx_rttvar += (delta - kcp.rx_rttvar) >> 2
 		}
 	}
-	rto = kcp.rx_srtt + _imax_(kcp.interval, 4*kcp.rx_rttval)
+	rto = uint32(kcp.rx_srtt) + _imax_(kcp.interval, uint32(kcp.rx_rttvar)<<2)
 	kcp.rx_rto = _ibound_(kcp.rx_minrto, rto, IKCP_RTO_MAX)
 }
 
@@ -384,9 +386,9 @@ func (kcp *KCP) parse_ack(sn uint32) {
 	for k := range kcp.snd_buf {
 		seg := &kcp.snd_buf[k]
 		if sn == seg.sn {
-			kcp.delSegment(seg)
+			kcp.delSegment(*seg)
 			copy(kcp.snd_buf[k:], kcp.snd_buf[k+1:])
-			kcp.snd_buf[len(kcp.snd_buf)-1] = Segment{}
+			kcp.snd_buf[len(kcp.snd_buf)-1] = segment{}
 			kcp.snd_buf = kcp.snd_buf[:len(kcp.snd_buf)-1]
 			break
 		}
@@ -405,7 +407,7 @@ func (kcp *KCP) parse_fastack(sn uint32) {
 		seg := &kcp.snd_buf[k]
 		if _itimediff(sn, seg.sn) < 0 {
 			break
-		} else if sn != seg.sn { //  && kcp.current >= seg.ts+kcp.rx_srtt {
+		} else if sn != seg.sn {
 			seg.fastack++
 		}
 	}
@@ -416,13 +418,15 @@ func (kcp *KCP) parse_una(una uint32) {
 	for k := range kcp.snd_buf {
 		seg := &kcp.snd_buf[k]
 		if _itimediff(una, seg.sn) > 0 {
-			kcp.delSegment(seg)
+			kcp.delSegment(*seg)
 			count++
 		} else {
 			break
 		}
 	}
-	kcp.snd_buf = kcp.snd_buf[count:]
+	if count > 0 {
+		kcp.snd_buf = kcp.remove_front(kcp.snd_buf, count)
+	}
 }
 
 // ack append
@@ -430,7 +434,7 @@ func (kcp *KCP) ack_push(sn, ts uint32) {
 	kcp.acklist = append(kcp.acklist, ackItem{sn, ts})
 }
 
-func (kcp *KCP) parse_data(newseg *Segment) {
+func (kcp *KCP) parse_data(newseg segment) {
 	sn := newseg.sn
 	if _itimediff(sn, kcp.rcv_nxt+kcp.rcv_wnd) >= 0 ||
 		_itimediff(sn, kcp.rcv_nxt) < 0 {
@@ -456,11 +460,11 @@ func (kcp *KCP) parse_data(newseg *Segment) {
 
 	if !repeat {
 		if insert_idx == n+1 {
-			kcp.rcv_buf = append(kcp.rcv_buf, *newseg)
+			kcp.rcv_buf = append(kcp.rcv_buf, newseg)
 		} else {
-			kcp.rcv_buf = append(kcp.rcv_buf, Segment{})
+			kcp.rcv_buf = append(kcp.rcv_buf, segment{})
 			copy(kcp.rcv_buf[insert_idx+1:], kcp.rcv_buf[insert_idx:])
-			kcp.rcv_buf[insert_idx] = *newseg
+			kcp.rcv_buf[insert_idx] = newseg
 		}
 	} else {
 		kcp.delSegment(newseg)
@@ -477,20 +481,24 @@ func (kcp *KCP) parse_data(newseg *Segment) {
 			break
 		}
 	}
-	kcp.rcv_queue = append(kcp.rcv_queue, kcp.rcv_buf[:count]...)
-	kcp.rcv_buf = kcp.rcv_buf[count:]
+	if count > 0 {
+		kcp.rcv_queue = append(kcp.rcv_queue, kcp.rcv_buf[:count]...)
+		kcp.rcv_buf = kcp.remove_front(kcp.rcv_buf, count)
+	}
 }
 
 // Input when you received a low level packet (eg. UDP packet), call it
-func (kcp *KCP) Input(data []byte, update_ack bool) int {
-	una := kcp.snd_una
+// regular indicates a regular packet has received(not from FEC)
+func (kcp *KCP) Input(data []byte, regular, ackNoDelay bool) int {
+	snd_una := kcp.snd_una
 	if len(data) < IKCP_OVERHEAD {
 		return -1
 	}
 
 	var maxack uint32
-	var recentack uint32
+	var lastackts uint32
 	var flag int
+	var inSegs uint64
 
 	for {
 		var ts, sn, length, una, conv uint32
@@ -503,7 +511,7 @@ func (kcp *KCP) Input(data []byte, update_ack bool) int {
 
 		data = ikcp_decode32u(data, &conv)
 		if conv != kcp.conv {
-			return -10
+			return -1
 		}
 
 		data = ikcp_decode8u(data, &cmd)
@@ -514,7 +522,6 @@ func (kcp *KCP) Input(data []byte, update_ack bool) int {
 		data = ikcp_decode32u(data, &una)
 		data = ikcp_decode32u(data, &length)
 		if len(data) < int(length) {
-			println(len(data), length) // 1576 1952
 			return -2
 		}
 
@@ -523,7 +530,10 @@ func (kcp *KCP) Input(data []byte, update_ack bool) int {
 			return -3
 		}
 
-		kcp.rmt_wnd = uint32(wnd)
+		// only trust window updates from regular packets. i.e: latest update
+		if regular {
+			kcp.rmt_wnd = uint32(wnd)
+		}
 		kcp.parse_una(una)
 		kcp.shrink_buf()
 
@@ -533,19 +543,20 @@ func (kcp *KCP) Input(data []byte, update_ack bool) int {
 			if flag == 0 {
 				flag = 1
 				maxack = sn
+				lastackts = ts
 			} else if _itimediff(sn, maxack) > 0 {
 				maxack = sn
+				lastackts = ts
 			}
-			recentack = ts
 		} else if cmd == IKCP_CMD_PUSH {
 			if _itimediff(sn, kcp.rcv_nxt+kcp.rcv_wnd) < 0 {
 				kcp.ack_push(sn, ts)
 				if _itimediff(sn, kcp.rcv_nxt) >= 0 {
 					seg := kcp.newSegment(int(length))
 					seg.conv = conv
-					seg.cmd = uint32(cmd)
-					seg.frg = uint32(frg)
-					seg.wnd = uint32(wnd)
+					seg.cmd = cmd
+					seg.frg = frg
+					seg.wnd = wnd
 					seg.ts = ts
 					seg.sn = sn
 					seg.una = una
@@ -567,18 +578,20 @@ func (kcp *KCP) Input(data []byte, update_ack bool) int {
 			return -3
 		}
 
+		inSegs++
 		data = data[length:]
 	}
+	atomic.AddUint64(&DefaultSnmp.InSegs, inSegs)
 
-	current := currentMs()
-	if flag != 0 && update_ack {
+	if flag != 0 && regular {
 		kcp.parse_fastack(maxack)
-		if _itimediff(current, recentack) >= 0 {
-			kcp.update_ack(_itimediff(current, recentack))
+		current := currentMs()
+		if _itimediff(current, lastackts) >= 0 {
+			kcp.update_ack(_itimediff(current, lastackts))
 		}
 	}
 
-	if _itimediff(kcp.snd_una, una) > 0 {
+	if _itimediff(kcp.snd_una, snd_una) > 0 {
 		if kcp.cwnd < kcp.rmt_wnd {
 			mss := kcp.mss
 			if kcp.cwnd < kcp.ssthresh {
@@ -600,28 +613,28 @@ func (kcp *KCP) Input(data []byte, update_ack bool) int {
 		}
 	}
 
+	if ackNoDelay && len(kcp.acklist) > 0 { // ack immediately
+		kcp.flush(true)
+	}
 	return 0
 }
 
-func (kcp *KCP) wnd_unused() int32 {
+func (kcp *KCP) wnd_unused() uint16 {
 	if len(kcp.rcv_queue) < int(kcp.rcv_wnd) {
-		return int32(int(kcp.rcv_wnd) - len(kcp.rcv_queue))
+		return uint16(int(kcp.rcv_wnd) - len(kcp.rcv_queue))
 	}
 	return 0
 }
 
 // flush pending data
-func (kcp *KCP) flush() {
-	buffer := kcp.buffer
-	change := 0
-	lost := false
-
-	var seg Segment
+func (kcp *KCP) flush(ackOnly bool) {
+	var seg segment
 	seg.conv = kcp.conv
 	seg.cmd = IKCP_CMD_ACK
-	seg.wnd = uint32(kcp.wnd_unused())
+	seg.wnd = kcp.wnd_unused()
 	seg.una = kcp.rcv_nxt
 
+	buffer := kcp.buffer
 	// flush acknowledges
 	ptr := buffer
 	for i, ack := range kcp.acklist {
@@ -636,11 +649,19 @@ func (kcp *KCP) flush() {
 			ptr = seg.encode(ptr)
 		}
 	}
-	kcp.acklist = nil
+	kcp.acklist = kcp.acklist[0:0]
 
-	current := currentMs()
+	if ackOnly { // flash remain ack segments
+		size := len(buffer) - len(ptr)
+		if size > 0 {
+			kcp.output(buffer, size, kcp.extra)
+		}
+		return
+	}
+
 	// probe window size (if remote window size equals zero)
 	if kcp.rmt_wnd == 0 {
+		current := currentMs()
 		if kcp.probe_wait == 0 {
 			kcp.probe_wait = IKCP_PROBE_INIT
 			kcp.ts_probe = current + kcp.probe_wait
@@ -693,7 +714,7 @@ func (kcp *KCP) flush() {
 	}
 
 	// sliding window, controlled by snd_nxt && sna_una+cwnd
-	count := 0
+	newSegsCount := 0
 	for k := range kcp.snd_queue {
 		if _itimediff(kcp.snd_nxt, kcp.snd_una+cwnd) >= 0 {
 			break
@@ -701,23 +722,14 @@ func (kcp *KCP) flush() {
 		newseg := kcp.snd_queue[k]
 		newseg.conv = kcp.conv
 		newseg.cmd = IKCP_CMD_PUSH
-		newseg.wnd = seg.wnd
-		newseg.ts = current
 		newseg.sn = kcp.snd_nxt
-		newseg.una = kcp.rcv_nxt
-		newseg.resendts = newseg.ts
-		newseg.rto = kcp.rx_rto
 		kcp.snd_buf = append(kcp.snd_buf, newseg)
 		kcp.snd_nxt++
-		count++
+		newSegsCount++
 		kcp.snd_queue[k].data = nil
 	}
-	kcp.snd_queue = kcp.snd_queue[count:]
-
-	// flag pending data
-	hasPending := false
-	if count > 0 {
-		hasPending = true
+	if newSegsCount > 0 {
+		kcp.snd_queue = kcp.remove_front(kcp.snd_queue, newSegsCount)
 	}
 
 	// calculate resent
@@ -726,61 +738,54 @@ func (kcp *KCP) flush() {
 		resent = 0xffffffff
 	}
 
-	// flush data segments
-	var lostSegs, fastRetransSegs, earlyRetransSegs uint64
+	// check for retransmissions
+	current := currentMs()
+	var change, lost, lostSegs, fastRetransSegs, earlyRetransSegs uint64
 	for k := range kcp.snd_buf {
-		current := currentMs()
 		segment := &kcp.snd_buf[k]
 		needsend := false
-		if segment.xmit == 0 {
+		if segment.xmit == 0 { // initial transmit
 			needsend = true
-			segment.xmit++
 			segment.rto = kcp.rx_rto
 			segment.resendts = current + segment.rto
-		} else if _itimediff(current, segment.resendts) >= 0 {
+		} else if _itimediff(current, segment.resendts) >= 0 { // RTO
 			needsend = true
-			segment.xmit++
-			kcp.xmit++
 			if kcp.nodelay == 0 {
 				segment.rto += kcp.rx_rto
 			} else {
 				segment.rto += kcp.rx_rto / 2
 			}
 			segment.resendts = current + segment.rto
-			lost = true
+			lost++
 			lostSegs++
 		} else if segment.fastack >= resent { // fast retransmit
-			lastsend := segment.resendts - segment.rto
-			if _itimediff(current, lastsend) >= int32(kcp.rx_rto/4) {
-				needsend = true
-				segment.xmit++
-				segment.fastack = 0
-				segment.resendts = current + segment.rto
-				change++
-				fastRetransSegs++
-			}
-		} else if segment.fastack > 0 && !hasPending { // early retransmit
-			lastsend := segment.resendts - segment.rto
-			if _itimediff(current, lastsend) >= int32(kcp.rx_rto/4) {
-				needsend = true
-				segment.xmit++
-				segment.fastack = 0
-				segment.resendts = current + segment.rto
-				change++
-				earlyRetransSegs++
-			}
+			needsend = true
+			segment.fastack = 0
+			segment.rto = kcp.rx_rto
+			segment.resendts = current + segment.rto
+			change++
+			fastRetransSegs++
+		} else if segment.fastack > 0 && newSegsCount == 0 { // early retransmit
+			needsend = true
+			segment.fastack = 0
+			segment.rto = kcp.rx_rto
+			segment.resendts = current + segment.rto
+			change++
+			earlyRetransSegs++
 		}
 
 		if needsend {
+			segment.xmit++
 			segment.ts = current
 			segment.wnd = seg.wnd
-			segment.una = kcp.rcv_nxt
+			segment.una = seg.una
 
 			size := len(buffer) - len(ptr)
 			need := IKCP_OVERHEAD + len(segment.data)
 
 			if size+need > int(kcp.mtu) {
 				kcp.output(buffer, size, kcp.extra)
+				current = currentMs() // time update for a blocking call
 				ptr = buffer
 			}
 
@@ -794,20 +799,32 @@ func (kcp *KCP) flush() {
 		}
 	}
 
-	atomic.AddUint64(&DefaultSnmp.RetransSegs, lostSegs+fastRetransSegs+earlyRetransSegs)
-	atomic.AddUint64(&DefaultSnmp.LostSegs, lostSegs)
-	atomic.AddUint64(&DefaultSnmp.EarlyRetransSegs, earlyRetransSegs)
-	atomic.AddUint64(&DefaultSnmp.FastRetransSegs, fastRetransSegs)
-
 	// flash remain segments
 	size := len(buffer) - len(ptr)
 	if size > 0 {
 		kcp.output(buffer, size, kcp.extra)
 	}
 
+	// counter updates
+	sum := lostSegs
+	if lostSegs > 0 {
+		atomic.AddUint64(&DefaultSnmp.LostSegs, lostSegs)
+	}
+	if fastRetransSegs > 0 {
+		atomic.AddUint64(&DefaultSnmp.FastRetransSegs, fastRetransSegs)
+		sum += fastRetransSegs
+	}
+	if earlyRetransSegs > 0 {
+		atomic.AddUint64(&DefaultSnmp.EarlyRetransSegs, earlyRetransSegs)
+		sum += earlyRetransSegs
+	}
+	if sum > 0 {
+		atomic.AddUint64(&DefaultSnmp.RetransSegs, sum)
+	}
+
 	// update ssthresh
 	// rate halving, https://tools.ietf.org/html/rfc6937
-	if change != 0 {
+	if change > 0 {
 		inflight := kcp.snd_nxt - kcp.snd_una
 		kcp.ssthresh = inflight / 2
 		if kcp.ssthresh < IKCP_THRESH_MIN {
@@ -818,7 +835,7 @@ func (kcp *KCP) flush() {
 	}
 
 	// congestion control, https://tools.ietf.org/html/rfc5681
-	if lost {
+	if lost > 0 {
 		kcp.ssthresh = cwnd / 2
 		if kcp.ssthresh < IKCP_THRESH_MIN {
 			kcp.ssthresh = IKCP_THRESH_MIN
@@ -857,7 +874,7 @@ func (kcp *KCP) Update() {
 		if _itimediff(current, kcp.ts_flush) >= 0 {
 			kcp.ts_flush = current + kcp.interval
 		}
-		kcp.flush()
+		kcp.flush(false)
 	}
 }
 
@@ -972,4 +989,13 @@ func (kcp *KCP) WndSize(sndwnd, rcvwnd int) int {
 // WaitSnd gets how many packet is waiting to be sent
 func (kcp *KCP) WaitSnd() int {
 	return len(kcp.snd_buf) + len(kcp.snd_queue)
+}
+
+// remove front n elements from queue
+func (kcp *KCP) remove_front(q []segment, n int) []segment {
+	newn := copy(q, q[n:])
+	for i := newn; i < len(q); i++ {
+		q[i] = segment{} // manual set nil for GC
+	}
+	return q[:newn]
 }

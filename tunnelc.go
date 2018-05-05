@@ -469,7 +469,7 @@ func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 			newpkt := ch.makeCloseFINPacket()
 			this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
 		} else {
-			n := ch.kcp.Input(buf, true)
+			n := ch.kcp.Input(buf, true, true)
 			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 		}
 	} else {
@@ -492,7 +492,7 @@ func (this *Tunnelc) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 		if ch == nil {
 			errl.Println("maybe has some problem")
 		}
-		n := ch.kcp.Input(buf, true)
+		n := ch.kcp.Input(buf, true, true)
 		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 	} else {
 		info.Println("unknown message:", buf[0])

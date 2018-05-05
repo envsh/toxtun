@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 )
@@ -133,16 +134,16 @@ func test(mode int) {
 
 	// 创建两个端点的 kcp对象，第一个参数 conv是会话编号，同一个会话需要相同
 	// 最后一个是 user参数，用来传递标识
-	output1 := func(buf []byte, size int, extra interface{}) {
+	output1 := func(buf []byte, size int) {
 		if vnet.send(0, buf, size) != 1 {
 		}
 	}
-	output2 := func(buf []byte, size int, extra interface{}) {
+	output2 := func(buf []byte, size int) {
 		if vnet.send(1, buf, size) != 1 {
 		}
 	}
-	kcp1 := NewKCP(0x11223344, output1, nil)
-	kcp2 := NewKCP(0x11223344, output2, nil)
+	kcp1 := NewKCP(0x11223344, output1)
+	kcp2 := NewKCP(0x11223344, output2)
 
 	current := uint32(iclock())
 	slap := current + 20
@@ -205,7 +206,7 @@ func test(mode int) {
 				break
 			}
 			// 如果 p2收到udp，则作为下层协议输入到kcp2
-			kcp2.Input(buffer[:hr], true)
+			kcp2.Input(buffer[:hr], true, false)
 		}
 
 		// 处理虚拟网络：检测是否有udp包从p2->p1
@@ -215,7 +216,7 @@ func test(mode int) {
 				break
 			}
 			// 如果 p1收到udp，则作为下层协议输入到kcp1
-			kcp1.Input(buffer[:hr], true)
+			kcp1.Input(buffer[:hr], true, false)
 			//println("@@@@", hr, r)
 		}
 
@@ -263,7 +264,7 @@ func test(mode int) {
 				maxrtt = int(rtt)
 			}
 
-			println("[RECV] mode=", mode, " sn=", sn, " rtt=", rtt)
+			//println("[RECV] mode=", mode, " sn=", sn, " rtt=", rtt)
 		}
 
 		if next > 100 {
@@ -282,4 +283,21 @@ func TestNetwork(t *testing.T) {
 	test(0) // 默认模式，类似 TCP：正常模式，无快速重传，常规流控
 	test(1) // 普通模式，关闭流控等
 	test(2) // 快速模式，所有开关都打开，且关闭流控
+}
+
+func BenchmarkFlush(b *testing.B) {
+	kcp := NewKCP(1, func(buf []byte, size int) {})
+	kcp.snd_buf = make([]segment, 32)
+	for k := range kcp.snd_buf {
+		kcp.snd_buf[k].xmit = 1
+		kcp.snd_buf[k].resendts = currentMs() + 10000
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	var mu sync.Mutex
+	for i := 0; i < b.N; i++ {
+		mu.Lock()
+		kcp.flush(false)
+		mu.Unlock()
+	}
 }

@@ -475,7 +475,7 @@ func (this *Tunneld) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 		if ch == nil {
 			info.Println("channel not found, maybe has some problem, maybe closed", conv)
 		} else {
-			n := ch.kcp.Input(buf, true)
+			n := ch.kcp.Input(buf, true, true)
 			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 		}
 	} else {
@@ -497,7 +497,7 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 		if ch == nil {
 			errl.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		} else {
-			n := ch.kcp.Input(buf, true)
+			n := ch.kcp.Input(buf, true, true)
 			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 		}
 	} else {
