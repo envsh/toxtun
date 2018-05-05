@@ -129,7 +129,7 @@ func (this *Tunneld) serve() {
 
 ///////////
 // TODO 计算kcpNextUpdateWait的逻辑优化
-func kcp_poll(pool map[int]*Channel) (chks []*Channel, nxtss []uint32) {
+func kcp_poll(pool map[int32]*Channel) (chks []*Channel, nxtss []uint32) {
 	for _, ch := range pool {
 		if ch.kcp == nil {
 			continue

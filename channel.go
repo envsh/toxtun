@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bitly/go-simplejson"
+	proto "github.com/golang/protobuf/proto"
 	"github.com/vmihailenco/msgpack"
 )
 
@@ -29,12 +30,12 @@ const (
 	CMDSENDDATA = "send_data"
 )
 
-var chanid0 int = 10000
+var chanid0 int32 = 10000
 var chanidlock sync.Mutex
 var msgid0 uint64 = 10000
 var msgidlock sync.Mutex
 
-func nextChanid() int {
+func nextChanid() int32 {
 	chanidlock.Lock()
 	defer chanidlock.Unlock()
 
@@ -55,8 +56,8 @@ func nextMsgid() uint64 {
 type Channel struct {
 	state   int
 	conn    net.Conn
-	chidcli int
-	chidsrv int
+	chidcli int32
+	chidsrv int32
 	ip      string
 	port    string
 	conv    uint32
@@ -90,7 +91,7 @@ func NewChannelClient(conn net.Conn) *Channel {
 	return ch
 }
 
-func NewChannelWithId(chanid int) *Channel {
+func NewChannelWithId(chanid int32) *Channel {
 	ch := new(Channel)
 	ch.chidsrv = nextChanid()
 	ch.chidcli = chanid
@@ -159,13 +160,13 @@ func (this *Channel) closeReason() string {
 
 ///////////
 type ChannelPool struct {
-	pool  map[int]*Channel
+	pool  map[int32]*Channel
 	pool2 map[uint32]*Channel
 }
 
 func NewChannelPool() *ChannelPool {
 	p := new(ChannelPool)
-	p.pool = make(map[int]*Channel, 0)
+	p.pool = make(map[int32]*Channel, 0)
 	p.pool2 = make(map[uint32]*Channel, 0)
 
 	return p
@@ -245,17 +246,34 @@ func (this *ChannelPool) rmServer(ch *Channel) {
 }
 
 ////////////
-const pkt_use_fmt = "msgp" // "json"
+const pkt_use_fmt = "protobuf" // "msgpack" // "json" // "protobuf"
 type Packet struct {
-	Chidcli    int
-	Chidsrv    int
-	Command    string
-	Data       string
-	Remoteip   string
-	Remoteport string
-	Conv       uint32
-	Msgid      uint64
+	/*
+		Chidcli    int
+		Chidsrv    int
+		Command    string
+		Data       string
+		Remoteip   string
+		Remoteport string
+		Conv       uint32
+		Msgid      uint64
+	*/
+	Version    int32  `protobuf:"varint,1,opt,name=Version" json:"ver,omitempty" msgpack:"ver,omitempty"`
+	Chidcli    int32  `protobuf:"varint,2,opt,name=Chidcli" json:"ccid,omitempty" msgpack:"ccid,omitempty"`
+	Chidsrv    int32  `protobuf:"varint,3,opt,name=Chidsrv" json:"scid,omitempty" msgpack:"scid,omitempty"`
+	Command    string `protobuf:"bytes,4,opt,name=Command" json:"cmd,omitempty" msgpack:"cmd,omitempty"`
+	Remoteip   string `protobuf:"bytes,5,opt,name=Remoteip" json:"rip,omitempty" msgpack:"rip,omitempty"`
+	Remoteport string `protobuf:"bytes,6,opt,name=Remoteport" json:"rpt,omitempty" msgpack:"rpt,omitempty"`
+	Conv       uint32 `protobuf:"varint,7,opt,name=Conv" json:"conv,omitempty" msgpack:"conv,omitempty"`
+	Msgid      uint64 `protobuf:"varint,8,opt,name=Msgid" json:"mid,omitempty" msgpack:"mid,omitempty"`
+	Compress   bool   `protobuf:"varint,9,opt,name=Compress" json:"cpr,omitempty" msgpack:"cpr,omitempty"`
+	Data       string `protobuf:"bytes,10,opt,name=Data" json:"dat,omitempty" msgpack:"dat,omitempty"`
 }
+
+// proto.Message interface methods
+func (m *Packet) Reset()         { *m = Packet{} }
+func (m *Packet) String() string { return proto.CompactTextString(m) }
+func (*Packet) ProtoMessage()    {}
 
 func NewPacket(ch *Channel, command string, data string) *Packet {
 	return &Packet{Chidcli: ch.chidcli, Chidsrv: ch.chidsrv, Command: command, Data: data,
@@ -282,7 +300,7 @@ func (this *Packet) isdata() bool {
 }
 
 func (this *Packet) toJson() []byte {
-	if pkt_use_fmt == "msgp" {
+	if pkt_use_fmt == "msgpack" {
 		bcc, err := base64.StdEncoding.DecodeString(this.Data)
 		if err != nil {
 			info.Println(err)
@@ -292,6 +310,8 @@ func (this *Packet) toJson() []byte {
 			nthis.Data = string(bcc)
 			return nthis.toMsgPackImpl()
 		}
+	} else if pkt_use_fmt == "protobuf" {
+		return this.toProtobufImpl()
 	}
 	return this.toJsonImpl()
 }
@@ -309,13 +329,14 @@ func (this *Packet) toJsonImpl() []byte {
 
 	jsb, err := jso.Encode()
 	if err != nil {
+		info.Println(err)
 		return nil
 	}
 	return jsb
 }
 
 func parsePacket(buf []byte) *Packet {
-	if pkt_use_fmt == "msgp" {
+	if pkt_use_fmt == "msgpack" {
 		pkt := parsePacketFromMsgPack(buf)
 		if pkt == nil {
 			return nil
@@ -323,6 +344,12 @@ func parsePacket(buf []byte) *Packet {
 		npkt := *pkt
 		npkt.Data = base64.StdEncoding.EncodeToString([]byte(pkt.Data))
 		return &npkt
+	} else if pkt_use_fmt == "protobuf" {
+		pkt := parsePacketFromProtobuf(buf)
+		if pkt == nil {
+			return nil
+		}
+		return pkt
 	}
 	return parsePacketFromJson(buf)
 }
@@ -330,12 +357,13 @@ func parsePacket(buf []byte) *Packet {
 func parsePacketFromJson(buf []byte) *Packet {
 	jso, err := simplejson.NewJson(buf)
 	if err != nil {
+		info.Println(err)
 		return nil
 	}
 
 	pkt := new(Packet)
-	pkt.Chidcli = jso.Get(CMDKEYCHANIDCLIENT).MustInt()
-	pkt.Chidsrv = jso.Get(CMDKEYCHANIDSERVER).MustInt()
+	pkt.Chidcli = int32(jso.Get(CMDKEYCHANIDCLIENT).MustInt())
+	pkt.Chidsrv = int32(jso.Get(CMDKEYCHANIDSERVER).MustInt())
 	pkt.Command = jso.Get(CMDKEYCOMMAND).MustString()
 	pkt.Data = jso.Get(CMDKEYDATA).MustString()
 	pkt.Remoteip = jso.Get(CMDKEYREMIP).MustString()
@@ -350,6 +378,7 @@ func parsePacketFromJson(buf []byte) *Packet {
 func (this *Packet) toMsgPackImpl() []byte {
 	pkt, err := msgpack.Marshal(this)
 	if err != nil {
+		info.Println(err)
 		return nil
 	}
 	return pkt
@@ -359,6 +388,27 @@ func parsePacketFromMsgPack(buf []byte) *Packet {
 	pkto := &Packet{}
 	err := msgpack.Unmarshal(buf, pkto)
 	if err != nil {
+		info.Println(err)
+		return nil
+	}
+	return pkto
+}
+
+// protobuf
+func (this *Packet) toProtobufImpl() []byte {
+	pkt, err := proto.Marshal(this)
+	if err != nil {
+		info.Println(err)
+		return nil
+	}
+	return pkt
+}
+
+func parsePacketFromProtobuf(buf []byte) *Packet {
+	pkto := &Packet{}
+	err := proto.Unmarshal(buf, pkto)
+	if err != nil {
+		info.Println(err)
 		return nil
 	}
 	return pkto

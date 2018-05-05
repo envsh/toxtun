@@ -38,6 +38,7 @@ func main() {
 	}
 
 	set_speed_mode(kcp_mode)
+	info.Println("Using packet format:", pkt_use_fmt)
 	argv := flag.Args()
 	argc := len(argv)
 	if argc > 0 {
