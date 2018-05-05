@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"flag"
 	"net"
 	"runtime"
 	"strings"
@@ -246,7 +247,11 @@ func (this *ChannelPool) rmServer(ch *Channel) {
 }
 
 ////////////
-const pkt_use_fmt = "json" // "msgpack" // "json" // "protobuf"
+var pkt_use_fmt = "json" // "msgpack" // "json" // "protobuf"
+func init() {
+	flag.StringVar(&pkt_use_fmt, "pktfmt", pkt_use_fmt, "packet format: json/msgpack/protobuf")
+}
+
 type Packet struct {
 	Version    int32  `protobuf:"varint,1,opt,name=Version" json:"ver,omitempty" msgpack:"ver,omitempty"`
 	Chidcli    int32  `protobuf:"varint,2,opt,name=Chidcli" json:"ccid,omitempty" msgpack:"ccid,omitempty"`

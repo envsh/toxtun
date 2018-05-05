@@ -8,6 +8,8 @@ import (
 	"runtime/pprof"
 	"syscall"
 
+	_ "net/http/pprof"
+
 	"github.com/google/gops/agent"
 )
 
