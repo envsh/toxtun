@@ -27,6 +27,7 @@ func init() {
 	}
 
 	flag.StringVar(&config_file, "config", "", "config file .ini")
+
 }
 
 func main() {
@@ -49,6 +50,9 @@ func main() {
 	go NewStatServer().serve()
 	appevt.Trigger("appmode", inst_mode)
 
+	SetupProfile()
+	SetupGops()
+
 	switch inst_mode {
 	case "client":
 		if config == nil {
@@ -56,13 +60,17 @@ func main() {
 			os.Exit(-1)
 		}
 		tc := NewTunnelc()
-		tc.serve()
+		go tc.serve()
 	case "server":
 		td := NewTunneld()
-		td.serve()
+		go td.serve()
 	default:
 		log.Println("Invalid mode:", inst_mode, ", server/client.")
 		flag.PrintDefaults()
+		return
 	}
 
+	SetupSignal(func() {
+		StopProfile()
+	})
 }

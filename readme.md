@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/kitech/toxtun.svg?branch=master)](https://travis-ci.org/kitech/toxtun)
+[![Build Status](https://travis-ci.org/envsh/toxtun.svg?branch=master)](https://travis-ci.org/envsh/toxtun)
 
 ### toxtun
 
@@ -12,23 +12,22 @@
 
 ### 依赖包
 
-    go get -u github.com/kitech/go-toxcore
-    go get -u github.com/kitech/goplusplus
+    go get -u github.com/envsh/go-toxcore
     go get -u github.com/cyfdecyf/color
     go get -u github.com/bitly/go-simplejson
     go get -u github.com/GianlucaGuarini/go-observable
     go get -u github.com/go-ini/ini
+	go get -u github.com/tatsushid/go-fastping
     go get -u golang.org/x/net/icmp
-    go get -u github.com/tatsushid/go-fastping
     
 
 ### 安装
 
-    go get -u github.com/kitech/toxtun
+    go get -u github.com/envsh/toxtun
     
 或者，
 
-    git clone https://github.com/kitech/toxtun
+    git clone https://github.com/envsh/toxtun
     cd toxtun
     go build -v
 
@@ -60,18 +59,17 @@
 - [x] 配置参数
 - [x] 统计服务模块
 - [ ] 多端口tunnel支持
-- [ ] 数据编码：JSON=>MsgPack
+- [x] 数据编码：JSON=>MsgPack=>Protobuf
 - [x] toxnet/friend失联重连
 - [x] 关闭连接原因
 - [ ] 活动连接读写超时
 - [ ] 应该还能再加快传输速度
-- [x] kcp的三种模式
-- [x] UDP协议tunnel支持
-- [ ] MultiPath-TCP类似原理支持（多传输通道：tox/UDP/else）
+- [x] kcp的五种模式
 - [ ] tunnelc/tunneld实现的合并
 - [ ] 同时做客户端或者服务器端
-- [ ] MultiPath 智能选择与参数控制
 - [ ] 每个tunnel一个kcp实例方式
+- [x] dep依赖管理
+- [ ] UDP 协议 tunnel支持
 
 
 ### 创建连接流程
