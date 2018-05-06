@@ -19,9 +19,20 @@ var (
 	tunnelServerPort = 8113
 )
 
+type TunListener struct {
+	proto  string
+	tcplsn net.Listener
+	udplsn net.PacketConn
+}
+
+func newTunListenerUdp(lsn net.PacketConn) *TunListener {
+	return &TunListener{proto: "udp", udplsn: lsn}
+}
+func newTunListenerTcp(lsn net.Listener) *TunListener { return &TunListener{proto: "tcp", tcplsn: lsn} }
+
 type Tunnelc struct {
 	tox    *tox.Tox
-	srv    net.Listener
+	srvs   map[string]*TunListener
 	chpool *ChannelPool
 
 	toxPollChan chan ToxPollEvent
@@ -39,6 +50,7 @@ type Tunnelc struct {
 func NewTunnelc() *Tunnelc {
 	this := new(Tunnelc)
 	this.chpool = NewChannelPool()
+	this.srvs = make(map[string]*TunListener)
 
 	t := makeTox("toxtunc")
 	this.tox = t
@@ -56,16 +68,9 @@ func NewTunnelc() *Tunnelc {
 }
 
 func (this *Tunnelc) serve() {
-	tunnelServerPort = config.recs[0].lport
-	srv, err := net.Listen("tcp", fmt.Sprintf(":%d", tunnelServerPort))
-	if err != nil {
-		info.Println(err)
-		return
-	}
-	this.srv = srv
-	info.Println("tunaddr:", srv.Addr().String())
-	rec := config.recs[0]
-	this.tox.SelfSetStatusMessage(fmt.Sprintf("%s of toxtun, %+v", "toxtunc", rec))
+	recs := config.recs
+	this.tox.SelfSetStatusMessage(fmt.Sprintf("%s of toxtun, %+v", "toxtuncs", recs))
+	this.listenTunnels()
 
 	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
 	// this.toxReadyReadChan = make(chan ToxReadyReadEvent, 0)
@@ -95,7 +100,7 @@ func (this *Tunnelc) serve() {
 			// this.serveKcp()
 		}
 	}()
-	go this.serveTcp()
+	this.serveTunnels()
 
 	// like event handler
 	for {
@@ -109,7 +114,7 @@ func (this *Tunnelc) serve() {
 		// case evt := <-this.kcpOutputChan:
 		// 	this.processKcpOutput(evt.buf, evt.size, evt.extra)
 		case evt := <-this.newConnChan:
-			this.initConnChanel(evt.conn, evt.times, evt.btime)
+			this.initConnChannel(evt.conn, evt.times, evt.btime, evt.tname)
 		case evt := <-this.clientReadyReadChan:
 			this.processClientReadyRead(evt.ch, evt.buf, evt.size)
 		case evt := <-this.clientCloseChan:
@@ -124,13 +129,47 @@ func (this *Tunnelc) serve() {
 	}
 }
 
+func (this *Tunnelc) listenTunnels() {
+	for tname, tunrec := range config.recs {
+		tunnelServerPort := tunrec.lport
+		if tunrec.tproto == "tcp" {
+			srv, err := net.Listen(tunrec.tproto, fmt.Sprintf(":%d", tunnelServerPort))
+			if err != nil {
+				log.Println(lerrorp, err)
+				continue
+			}
+			this.srvs[tunrec.tname] = newTunListenerTcp(srv)
+		} else if tunrec.tproto == "udp" {
+			srv, err := net.ListenPacket("udp", fmt.Sprintf(":%d", tunnelServerPort))
+			if err != nil {
+				log.Println(lerrorp, err)
+				continue
+			}
+			this.srvs[tunrec.tname] = newTunListenerUdp(srv)
+
+		} else {
+			log.Panicln("wtf,", tunrec)
+		}
+		log.Println(linfop, fmt.Sprintf("#T%s", tname), "tunaddr:", tunrec.tname, tunrec.tproto, tunrec.lhost, tunrec.lport)
+	}
+}
+
 // 手写loop吧，试试
 func (this *Tunnelc) pollMain() {
 
 }
 
-func (this *Tunnelc) serveTcp() {
-	srv := this.srv
+func (this *Tunnelc) serveTunnels() {
+	srvs := this.srvs
+	for tname, srv := range srvs {
+		if srv.proto == "tcp" {
+			go this.serveTunnel(tname, srv.tcplsn)
+		}
+	}
+}
+
+// should blcok
+func (this *Tunnelc) serveTunnel(tname string, srv net.Listener) {
 
 	for {
 		c, err := srv.Accept()
@@ -138,37 +177,38 @@ func (this *Tunnelc) serveTcp() {
 			info.Println(err)
 		}
 		// info.Println(c)
-		info.Println("New connection from/to:", c.RemoteAddr(), c.LocalAddr())
-		this.newConnChan <- NewConnEvent{c, 0, time.Now()}
-		appevt.Trigger("newconn")
+		info.Println("New connection from/to:", c.RemoteAddr(), c.LocalAddr(), tname)
+		this.newConnChan <- NewConnEvent{c, 0, time.Now(), tname}
+		appevt.Trigger("newconn", tname)
 	}
 }
 
-func (this *Tunnelc) initConnChanel(conn net.Conn, times int, btime time.Time) {
-	ch := NewChannelClient(conn)
+func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, tname string) {
+	ch := NewChannelClient(conn, tname)
 	// ch.ip = "127.0.0.1"
 	// ch.port = "8118"
-	ch.ip = config.recs[0].rhost
-	ch.port = fmt.Sprintf("%d", config.recs[0].rport)
+	tunrec := config.getRecordByName(tname)
+	ch.ip = tunrec.rhost
+	ch.port = fmt.Sprintf("%d", tunrec.rport)
 	this.chpool.putClient(ch)
 
-	toxtunid := config.recs[0].rpubkey
+	toxtunid := tunrec.rpubkey
 	pkt := ch.makeConnectSYNPacket()
 	_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
 
 	if err != nil {
 		// 连接失败
-		debug.Println(err)
+		debug.Println(err, tname)
 		this.chpool.rmClient(ch)
 		if times < 10 {
 			go func() {
 				time.Sleep(500 * time.Millisecond)
-				this.newConnChan <- NewConnEvent{conn, times + 1, btime}
+				this.newConnChan <- NewConnEvent{conn, times + 1, btime, tname}
 			}()
 		} else {
-			info.Println("connect timeout:", times, time.Now().Sub(btime))
+			info.Println("connect timeout:", times, time.Now().Sub(btime), tname)
 			conn.Close()
-			appevt.Trigger("connerr")
+			appevt.Trigger("connerr", tname)
 		}
 		return
 	} else {
@@ -243,10 +283,14 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 		return
 	}
 
-	if _, ok := extra.(*Channel); !ok {
+	ch, ok := extra.(*Channel)
+	if !ok {
+		errl.Println("extra is not a *Channel:", extra)
+		return
 	}
 
-	toxtunid := config.recs[0].rpubkey
+	tunrec := config.getRecordByName(ch.tname)
+	toxtunid := tunrec.rpubkey
 	msg := string([]byte{254}) + string(buf[:size])
 	err := this.FriendSendLossyPacket(toxtunid, msg)
 	// msg := string([]byte{191}) + string(buf[:size])
@@ -290,8 +334,9 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 }
 
 func (this *Tunnelc) promiseChannelClose(ch *Channel) {
-	info.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv)
-	toxtunid := config.recs[0].rpubkey
+	info.Println("cleaning up:", ch.chidcli, ch.chidsrv, ch.conv, ch.tname)
+	tunrec := config.getRecordByName(ch.tname)
+	toxtunid := tunrec.rpubkey
 	if ch.client_socket_close == true && ch.server_socket_close == false {
 		pkt := ch.makeCloseFINPacket()
 		_, err := this.FriendSendMessage(toxtunid, string(pkt.toJson()))
@@ -346,19 +391,11 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 
 //////////////
 func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra interface{}) {
-	toxtunid := config.recs[0].rpubkey
-	friendNumber, err := t.FriendByPublicKey(toxtunid)
-	log.Println(friendNumber, err)
-	if err == nil {
-		if false {
-			t.FriendDelete(friendNumber)
-		}
-	}
-	if err != nil {
-		t.FriendAdd(toxtunid, "hello, i'am tuncli")
-		t.WriteSavedata(tox_savedata_fname)
-	}
 	info.Println("mytox status:", status)
+	for tname, _ := range this.srvs {
+		tunrec := config.getRecordByName(tname)
+		this.onToxnetSelfConnectionStatusImpl(t, status, extra, tunrec.tname, tunrec.rpubkey)
+	}
 	if status == 0 {
 		switchServer(t)
 	} else {
@@ -371,6 +408,22 @@ func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra 
 		appevt.Trigger("selfoffline")
 	} else {
 		appevt.Trigger("selfonline", true)
+	}
+}
+
+// 尝试添加为好友
+func (this *Tunnelc) onToxnetSelfConnectionStatusImpl(t *tox.Tox, status int, extra interface{},
+	tname string, toxtunid string) {
+	friendNumber, err := t.FriendByPublicKey(toxtunid)
+	log.Println(friendNumber, err)
+	if err == nil {
+		if false {
+			t.FriendDelete(friendNumber)
+		}
+	}
+	if err != nil {
+		t.FriendAdd(toxtunid, fmt.Sprintf("hello, i'am tuncli of %s", tname))
+		t.WriteSavedata(tox_savedata_fname)
 	}
 }
 

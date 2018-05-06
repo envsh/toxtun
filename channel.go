@@ -23,6 +23,8 @@ const (
 	CMDKEYREMPORT      = "remport"
 	CMDKEYCONV         = "conv"
 	CMDKEYMSGID        = "msgid"
+	CMDKEYTNAME        = "tunam"
+	CMDKEYTPROTO       = "tproto"
 
 	CMDCONNSYN  = "connect_syn"
 	CMDCONNACK  = "connect_ack"
@@ -55,6 +57,8 @@ func nextMsgid() uint64 {
 }
 
 type Channel struct {
+	tname   string
+	tproto  string
 	state   int
 	conn    net.Conn
 	chidcli int32
@@ -81,26 +85,41 @@ type Channel struct {
 	rmctimes      int
 }
 
-func NewChannelClient(conn net.Conn) *Channel {
+func NewChannelClient(conn net.Conn, tname string) *Channel {
 	ch := new(Channel)
+	ch.tname = tname
 	ch.chidcli = nextChanid()
 	ch.conn = conn
 	ch.conn_begin_time = time.Now()
 	ch.close_reasons = make([]string, 0)
 	ch.close_stacks = make([][]uintptr, 0)
 
+	if config != nil {
+		tunrec := config.getRecordByName(tname)
+		ch.tproto = tunrec.tproto
+	}
+
 	return ch
 }
 
-func NewChannelWithId(chanid int32) *Channel {
+func NewChannelWithId(chanid int32, tname string) *Channel {
 	ch := new(Channel)
+	ch.tname = tname
 	ch.chidsrv = nextChanid()
 	ch.chidcli = chanid
+
+	if config != nil {
+		tunrec := config.getRecordByName(tname)
+		ch.tproto = tunrec.tproto
+	}
+
 	return ch
 }
 
 func NewChannelFromPacket(pkt *Packet) *Channel {
 	ch := new(Channel)
+	ch.tname = pkt.Tunname
+	ch.tproto = pkt.Tunproto
 	ch.chidcli = pkt.Chidcli
 	ch.chidsrv = pkt.Chidsrv
 	ch.conv = pkt.Conv
@@ -111,24 +130,32 @@ func NewChannelFromPacket(pkt *Packet) *Channel {
 func (this *Channel) makeConnectSYNPacket() *Packet {
 	pkt := NewPacket(this, CMDCONNSYN, []byte(""))
 	pkt.Conv = this.conv
+	pkt.Tunname = this.tname
+	pkt.Tunproto = this.tproto
 	return pkt
 }
 
 func (this *Channel) makeConnectACKPacket() *Packet {
 	pkt := NewPacket(this, CMDCONNACK, []byte(""))
 	pkt.Conv = this.conv
+	pkt.Tunname = this.tname
+	pkt.Tunproto = this.tproto
 	return pkt
 }
 
 func (this *Channel) makeDataPacket(data []byte) *Packet {
 	pkt := NewPacket(this, CMDSENDDATA, data)
 	pkt.Conv = this.conv
+	pkt.Tunname = this.tname
+	pkt.Tunproto = this.tproto
 	return pkt
 }
 
 func (this *Channel) makeCloseFINPacket() *Packet {
 	pkt := NewPacket(this, CMDCLOSEFIN, []byte(""))
 	pkt.Conv = this.conv
+	pkt.Tunname = this.tname
+	pkt.Tunproto = this.tproto
 	return pkt
 }
 
@@ -157,6 +184,11 @@ func (this *Channel) addCloseReason(reason string) {
 
 func (this *Channel) closeReason() string {
 	return strings.Join(this.close_reasons, ",")
+}
+
+func (this *Channel) dumpInfo() []interface{} {
+	ch := this
+	return []interface{}{ch.chidcli, ch.chidsrv, ch.conv, ch.tname, ch.tproto}
 }
 
 ///////////
@@ -261,8 +293,10 @@ type Packet struct {
 	Remoteport string `protobuf:"bytes,6,opt,name=Remoteport" json:"rpt,omitempty" msgpack:"rpt,omitempty"`
 	Conv       uint32 `protobuf:"varint,7,opt,name=Conv" json:"conv,omitempty" msgpack:"conv,omitempty"`
 	Msgid      uint64 `protobuf:"varint,8,opt,name=Msgid" json:"mid,omitempty" msgpack:"mid,omitempty"`
-	Compress   bool   `protobuf:"varint,9,opt,name=Compress" json:"cpr,omitempty" msgpack:"cpr,omitempty"`
-	Data       []byte `protobuf:"bytes,10,opt,name=Data" json:"dat,omitempty" msgpack:"dat,omitempty"`
+	Tunname    string `protobuf:"varint,9,opt,name=Tunname" json:"tnm,omitempty" msgpack:"tnm,omitempty"`
+	Tunproto   string `protobuf:"varint,10,opt,name=Tunproto" json:"tpt,omitempty" msgpack:"tpt,omitempty"`
+	Compress   bool   `protobuf:"varint,11,opt,name=Compress" json:"cpr,omitempty" msgpack:"cpr,omitempty"`
+	Data       []byte `protobuf:"bytes,12,opt,name=Data" json:"dat,omitempty" msgpack:"dat,omitempty"`
 }
 
 // proto.Message interface methods
@@ -272,7 +306,7 @@ func (*Packet) ProtoMessage()    {}
 
 func NewPacket(ch *Channel, command string, data []byte) *Packet {
 	return &Packet{Chidcli: ch.chidcli, Chidsrv: ch.chidsrv, Command: command, Data: data,
-		Remoteip: ch.ip, Remoteport: ch.port, Msgid: nextMsgid()}
+		Remoteip: ch.ip, Remoteport: ch.port, Msgid: nextMsgid(), Tunname: ch.tname}
 }
 
 func NewBrokenPacket(conv uint32) *Packet {
@@ -309,6 +343,7 @@ func (this *Packet) toJson() []byte {
 
 func (this *Packet) toJsonImpl() []byte {
 	jso := simplejson.New()
+	jso.Set(CMDKEYTNAME, this.Tunname)
 	jso.Set(CMDKEYCHANIDCLIENT, this.Chidcli)
 	jso.Set(CMDKEYCHANIDSERVER, this.Chidsrv)
 	jso.Set(CMDKEYCOMMAND, this.Command)
@@ -316,6 +351,7 @@ func (this *Packet) toJsonImpl() []byte {
 	if !this.isdata() {
 		jso.Set(CMDKEYREMIP, this.Remoteip)
 		jso.Set(CMDKEYREMPORT, this.Remoteport)
+		jso.Set(CMDKEYTPROTO, this.Tunproto)
 	}
 	jso.Set(CMDKEYCONV, this.Conv)
 	jso.Set(CMDKEYMSGID, this.Msgid)
@@ -353,12 +389,14 @@ func parsePacketFromJson(buf []byte) *Packet {
 	}
 
 	pkt := new(Packet)
+	pkt.Tunname = jso.Get(CMDKEYTNAME).MustString()
 	pkt.Chidcli = int32(jso.Get(CMDKEYCHANIDCLIENT).MustInt())
 	pkt.Chidsrv = int32(jso.Get(CMDKEYCHANIDSERVER).MustInt())
 	pkt.Command = jso.Get(CMDKEYCOMMAND).MustString()
 	if !pkt.isdata() {
 		pkt.Remoteip = jso.Get(CMDKEYREMIP).MustString()
 		pkt.Remoteport = jso.Get(CMDKEYREMPORT).MustString()
+		pkt.Tunproto = jso.Get(CMDKEYTPROTO).MustString()
 	}
 	pkt.Conv = uint32(jso.Get(CMDKEYCONV).MustUint64())
 	pkt.Msgid = jso.Get(CMDKEYMSGID).MustUint64()

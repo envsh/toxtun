@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math"
 	// "log"
 	"bytes"
@@ -223,7 +224,7 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 
 func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	if ch.conn == nil {
-		errl.Println("Not Connected:", ch.chidsrv, ch.chidcli)
+		errl.Println("Not Connected:", ch.chidsrv, ch.chidcli, ch.tname)
 		// return
 	}
 
@@ -231,7 +232,7 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	n := ch.kcp.Recv(buf)
 
 	if len(buf) != n {
-		errl.Println("Invalide kcp recv data")
+		errl.Println("Invalide kcp recv data", ch.tname)
 	}
 
 	pkt := parsePacket(buf)
@@ -258,7 +259,7 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	// Dial
 	conn, err := net.Dial("tcp", net.JoinHostPort(ch.ip, ch.port))
 	if err != nil {
-		errl.Println(err, ch.chidcli, ch.chidsrv, ch.conv)
+		errl.Println(err, ch.chidcli, ch.chidsrv, ch.conv, ch.tname)
 		// 连接结束
 		debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
 		ch.server_socket_close = true
@@ -267,7 +268,7 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 		return
 	}
 	ch.conn = conn
-	info.Println("connected to:", conn.RemoteAddr().String(), ch.chidcli, ch.chidsrv, ch.conv)
+	info.Println("connected to:", conn.RemoteAddr().String(), ch.chidcli, ch.chidsrv, ch.conv, ch.tname)
 	// info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 
 	repkt := ch.makeConnectACKPacket()
@@ -434,7 +435,10 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 		info.Println("maybe not command, just normal message", gopp.StrSuf(message, 52))
 	} else {
 		if pkt.Command == CMDCONNSYN {
-			ch := NewChannelWithId(pkt.Chidcli)
+			log.Println(message)
+			info.Printf("New conn on tunnel %s to %s:%s:%s\n", pkt.Tunname, pkt.Tunproto, pkt.Remoteip, pkt.Remoteport)
+			ch := NewChannelWithId(pkt.Chidcli, pkt.Tunname)
+			ch.tproto = pkt.Tunproto
 			ch.conv = this.makeKcpConv(friendId, pkt)
 			ch.ip = pkt.Remoteip
 			ch.port = pkt.Remoteport

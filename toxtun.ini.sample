@@ -5,9 +5,10 @@ name = whtun
 # 类似ssh的-L模式 [localip:]localport:remoteip:remoteport
 # 而toxtun实现则多一个pubkey，出口节点的tox 节点 pubkey
 # 第一个为*表示监听到*:xxx
-# 每一条对应一个ToxTunRecrod
-# 2 = *:82:127.0.0.1:8282:pubkey2
-oabox1 = *:18118:127.0.0.1:8118:your-toxtun-server-tox-id
-oabox2 = *:12222:127.0.0.1:2222:your-toxtun-servertox-id
+# 每一条对应一个ToxTunRecord
+# chname = protocol:*:82:127.0.0.1:8282:pubkey2
+oabox1 = tcp:*:18118:127.0.0.1:8118:your-toxtun-server-tox-id1
+oabox2 = tcp:*:12222:127.0.0.1:2222:your-toxtun-servertox-id2
+oabox3 = udp:*:12345:127.0.0.1:12345:your-toxtun-servertox-id3
 
 [router]
