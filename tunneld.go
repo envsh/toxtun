@@ -242,8 +242,8 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 }
 
 func isUdpBareChannel(ch *Channel) bool {
-	return ch != nil && ch.conv > 0 && ch.toxid != "" && ch.chidcli > 0 &&
-		ch.kcp != nil && ch.conn == nil && ch.chidsrv == 0 && ch.tname == ""
+	return ch != nil && ch.conv > 0 && ch.toxid != "" && ch.chidcli > 0 && ch.chidsrv == 0 &&
+		ch.kcp != nil && ch.conn == nil && ch.tname == ""
 }
 func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	if ch.conn == nil {
@@ -268,6 +268,7 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	}
 
 	pkt := parsePacket(buf)
+	debug.Println(ch.conn, isUdpBareChannel(ch), pkt.isdata())
 	if ch.conn == nil && isUdpBareChannel(ch) && pkt.isdata() {
 		// fix the channel info
 		this.fixUdpBareChannel(ch, pkt)
@@ -306,11 +307,11 @@ func (this *Tunneld) processKcpReadyReadUdp(ch *Channel, pkt *Packet) {
 		debug.Println("processing channel data:", ch.chidsrv, len(pkt.Data), gopp.StrSuf(string(pkt.Data), 52))
 
 		buf := pkt.Data
-		wn, err := ch.conn.Write(buf)
+		wn, err := ch.conn.WriteToHost(buf, net.JoinHostPort(ch.ip, ch.port))
 		if err != nil {
 			errl.Println(err)
 		}
-		debug.Println("kcp->srv:", wn)
+		debug.Println("kcp->srv:", wn, ch.tname, ch.tproto, ch.ip, ch.port)
 		appevt.Trigger("reqbytes", wn, len(buf)+25)
 	} else {
 	}
@@ -332,10 +333,11 @@ func (this *Tunneld) fixUdpBareChannel(ch *Channel, pkt *Packet) error {
 
 func (this *Tunneld) listenUdpTunnel(ch *Channel) {
 	tunnelServerPort := ch.chidsrv
-	srv, err := ListenUdpPortAuto(int(tunnelServerPort), "127.0.0.1")
+	srv, err := ListenUdpPortAuto(int(tunnelServerPort), "127.0.0.1") // always lo for temporay listen
 	if err != nil {
 		log.Println(lerrorp, err)
 	}
+	ch.conn = &UnionConn{udpc: srv}
 	go this.serveUdpTunnel(ch, srv)
 }
 
@@ -379,7 +381,7 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 		appevt.Trigger("connact", -1)
 		return
 	}
-	ch.conn = conn
+	ch.conn = &UnionConn{tcpc: conn}
 	info.Println("connected to:", conn.RemoteAddr().String(), ch.chidcli, ch.chidsrv, ch.conv, ch.tname)
 	// info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 
@@ -560,6 +562,7 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			ch.ip = pkt.Remoteip
 			ch.port = pkt.Remoteport
 			ch.toxid = friendId
+
 			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 			ch.kcp.SetMtu(tunmtu)
 			if strings.HasPrefix(kcp_mode, "fast") {

@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/base64"
+	"errors"
 	"flag"
 	"net"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +27,7 @@ const (
 	CMDKEYMSGID        = "msgid"
 	CMDKEYTNAME        = "tunam"
 	CMDKEYTPROTO       = "tproto"
+	CMDKEYSRCHOST      = "srch"
 
 	CMDCONNSYN  = "connect_syn"
 	CMDCONNACK  = "connect_ack"
@@ -57,11 +60,69 @@ func nextMsgid() uint64 {
 	return id
 }
 
+type UnionConn struct {
+	tcpc net.Conn
+	udpc net.PacketConn
+}
+
+func (this *UnionConn) Close() error {
+	if this.tcpc != nil {
+		return this.tcpc.Close()
+	}
+	if this.udpc != nil {
+		return this.udpc.Close()
+	}
+	return nil
+}
+
+func (this *UnionConn) Read(b []byte) (int, error) {
+	if this.tcpc != nil {
+		return this.tcpc.Read(b)
+	}
+	return 0, errors.New("conn nil")
+}
+
+func (this *UnionConn) Write(b []byte) (int, error) {
+	if this.tcpc != nil {
+		return this.tcpc.Write(b)
+	}
+	return 0, errors.New("conn nil")
+}
+
+func (this *UnionConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	if this.udpc != nil {
+		return this.udpc.ReadFrom(b)
+	}
+	return 0, nil, errors.New("conn nil")
+}
+
+func (this *UnionConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	if this.udpc != nil {
+		return this.udpc.WriteTo(b, addr)
+	}
+	return 0, errors.New("conn nil")
+}
+
+func (this *UnionConn) WriteToHost(b []byte, addr string) (int, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0, err
+	}
+	ipo := net.ParseIP(host)
+	porti, _ := strconv.Atoi(port)
+	addro := &net.UDPAddr{IP: ipo, Port: porti}
+	return this.WriteTo(b, addro)
+}
+
+func (this *UnionConn) IsNil() bool { return this.udpc == nil && this.tcpc == nil }
+
+//
 type Channel struct {
-	tname   string
-	tproto  string
-	state   int
-	conn    net.Conn
+	tname  string
+	tproto string
+	state  int
+	// conn    net.Conn
+	conn    *UnionConn
 	chidcli int32
 	chidsrv int32
 	ip      string
@@ -86,11 +147,13 @@ type Channel struct {
 	rmctimes      int
 }
 
-func NewChannelClient(conn net.Conn, tname string) *Channel {
+func NewChannelClientFromUnion(conn *UnionConn, tname string) *Channel {
 	ch := new(Channel)
 	ch.tname = tname
 	ch.chidcli = nextChanid()
-	ch.conn = conn
+	if conn.udpc != nil || conn.tcpc != nil {
+		ch.conn = conn
+	}
 	ch.conn_begin_time = time.Now()
 	ch.close_reasons = make([]string, 0)
 	ch.close_stacks = make([][]uintptr, 0)
@@ -101,6 +164,15 @@ func NewChannelClient(conn net.Conn, tname string) *Channel {
 	}
 
 	return ch
+}
+
+func NewChannelClientFromUdp(conn net.PacketConn, tname string) *Channel {
+	return NewChannelClientFromUnion(&UnionConn{udpc: conn}, tname)
+}
+
+// default FromTcp
+func NewChannelClient(conn net.Conn, tname string) *Channel {
+	return NewChannelClientFromUnion(&UnionConn{tcpc: conn}, tname)
 }
 
 func NewChannelWithId(chanid int32, tname string) *Channel {
@@ -299,6 +371,7 @@ type Packet struct {
 	Msgid      uint64 `protobuf:"varint,8,opt,name=Msgid" json:"mid,omitempty" msgpack:"mid,omitempty"`
 	Tunname    string `protobuf:"varint,9,opt,name=Tunname" json:"tnm,omitempty" msgpack:"tnm,omitempty"`
 	Tunproto   string `protobuf:"varint,10,opt,name=Tunproto" json:"tpt,omitempty" msgpack:"tpt,omitempty"`
+	Srchost    string `protobuf:"varint,10,opt,name=Srchost" json:"srch,omitempty" msgpack:"srch,omitempty"`
 	Compress   bool   `protobuf:"varint,11,opt,name=Compress" json:"cpr,omitempty" msgpack:"cpr,omitempty"`
 	Data       []byte `protobuf:"bytes,12,opt,name=Data" json:"dat,omitempty" msgpack:"dat,omitempty"`
 }
@@ -310,7 +383,8 @@ func (*Packet) ProtoMessage()    {}
 
 func NewPacket(ch *Channel, command string, data []byte) *Packet {
 	return &Packet{Chidcli: ch.chidcli, Chidsrv: ch.chidsrv, Command: command, Data: data,
-		Remoteip: ch.ip, Remoteport: ch.port, Msgid: nextMsgid(), Tunname: ch.tname}
+		Remoteip: ch.ip, Remoteport: ch.port, Msgid: nextMsgid(),
+		Tunname: ch.tname, Tunproto: ch.tproto}
 }
 
 func NewBrokenPacket(conv uint32) *Packet {
@@ -333,7 +407,7 @@ func (this *Packet) isdata() bool {
 }
 
 func (this *Packet) toJson() []byte {
-	if this.isdata() { // not need this info anymore
+	if this.isdata() && this.Tunproto == "tcp" { // not need this info anymore
 		this.Remoteip = ""
 		this.Remoteport = ""
 	}
@@ -353,9 +427,10 @@ func (this *Packet) toJsonImpl() []byte {
 	jso.Set(CMDKEYCHANIDSERVER, this.Chidsrv)
 	jso.Set(CMDKEYCOMMAND, this.Command)
 	jso.Set(CMDKEYDATA, this.Data)
-	if !this.isdata() {
+	if !this.isdata() || this.Tunproto == "udp" {
 		jso.Set(CMDKEYREMIP, this.Remoteip)
 		jso.Set(CMDKEYREMPORT, this.Remoteport)
+		jso.Set(CMDKEYSRCHOST, this.Srchost)
 	}
 	jso.Set(CMDKEYCONV, this.Conv)
 	jso.Set(CMDKEYMSGID, this.Msgid)
@@ -398,9 +473,10 @@ func parsePacketFromJson(buf []byte) *Packet {
 	pkt.Chidcli = int32(jso.Get(CMDKEYCHANIDCLIENT).MustInt())
 	pkt.Chidsrv = int32(jso.Get(CMDKEYCHANIDSERVER).MustInt())
 	pkt.Command = jso.Get(CMDKEYCOMMAND).MustString()
-	if !pkt.isdata() {
+	if !pkt.isdata() || pkt.Tunproto == "udp" {
 		pkt.Remoteip = jso.Get(CMDKEYREMIP).MustString()
 		pkt.Remoteport = jso.Get(CMDKEYREMPORT).MustString()
+		pkt.Srchost = jso.Get(CMDKEYSRCHOST).MustString()
 	}
 	pkt.Conv = uint32(jso.Get(CMDKEYCONV).MustUint64())
 	pkt.Msgid = jso.Get(CMDKEYMSGID).MustUint64()

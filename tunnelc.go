@@ -437,6 +437,7 @@ func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 	debug.Println("processing channel data:", ch.chidcli, gopp.StrSuf(string(pkt.Data), 52))
 
+	info.Printf("%+v\n", pkt)
 	buf := pkt.Data
 	wn, err := ch.conn.Write(buf)
 	if err != nil {
