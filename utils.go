@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"net"
@@ -81,4 +82,72 @@ func isReservedIp(ip net.IP) bool {
 
 func isReservedIpStr(ip string) bool {
 	return isReservedIp(net.ParseIP(ip))
+}
+
+func ListenUdpPortAuto(bport int, host string) (net.PacketConn, error) {
+	var pc net.PacketConn
+	var err error
+	for port := bport; port < 65536; port++ {
+		pc, err = net.ListenPacket("udp", fmt.Sprintf("%s:%d", host, port))
+		if err == nil {
+			return pc, nil
+		}
+	}
+	return nil, err
+}
+
+func kcp_reset_by_newest_rcvbuf(kcp *KCP) *KCP {
+	debug.Println(len(kcp.rcv_buf), len(kcp.rcv_queue))
+	kcpnxt := kcp.rcv_nxt
+	segsn := kcp.rcv_buf[len(kcp.rcv_buf)-1].sn
+	if kcpnxt == 0 && segsn > 0 {
+		kcp.rcv_nxt = segsn
+	} else if kcpnxt > 0 && segsn == 0 {
+		kcp.rcv_nxt = segsn
+	}
+	return kcp
+}
+
+func kcp_reset_by_seg(kcp *KCP, seg *segment) *KCP {
+	debug.Println(len(kcp.rcv_buf), len(kcp.rcv_queue))
+	kcpnxt := kcp.rcv_nxt
+	segsn := seg.sn
+	if kcpnxt == 0 && segsn > 0 {
+		kcp.rcv_nxt = segsn
+	} else if kcpnxt > 0 && segsn == 0 {
+		kcp.rcv_nxt = segsn
+		kcp.rcv_buf = kcp.rcv_buf[:0]
+		kcp.rcv_queue = kcp.rcv_queue[:0]
+	}
+	return kcp
+}
+
+func kcp_parse_segment(buf []byte) *segment {
+	data := make([]byte, 32)
+	copy(data, buf)
+
+	var ts, sn, length, una, conv uint32
+	var wnd uint16
+	var cmd, frg uint8
+
+	data = ikcp_decode32u(data, &conv)
+
+	data = ikcp_decode8u(data, &cmd)
+	data = ikcp_decode8u(data, &frg)
+	data = ikcp_decode16u(data, &wnd)
+	data = ikcp_decode32u(data, &ts)
+	data = ikcp_decode32u(data, &sn)
+	data = ikcp_decode32u(data, &una)
+	data = ikcp_decode32u(data, &length)
+
+	seg := &segment{}
+	seg.conv = conv
+	seg.cmd = cmd
+	seg.frg = frg
+	seg.wnd = wnd
+	seg.ts = ts
+	seg.sn = sn
+	seg.una = una
+
+	return seg
 }

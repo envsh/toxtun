@@ -33,9 +33,10 @@ const (
 	CMDSENDDATA = "send_data"
 )
 
-var chanid0 int32 = 10000
+// chanid < 100000 use as UDP channel id
+var chanid0 int32 = 100000
 var chanidlock sync.Mutex
-var msgid0 uint64 = 10000
+var msgid0 uint64 = 100000
 var msgidlock sync.Mutex
 
 func nextChanid() int32 {
@@ -213,6 +214,7 @@ func (this *ChannelPool) putClient(ch *Channel) {
 }
 
 // put lacked
+// lack what?
 func (this *ChannelPool) putClientLacks(ch *Channel) {
 	if _, ok := this.pool[ch.chidcli]; !ok {
 	}
@@ -221,7 +223,9 @@ func (this *ChannelPool) putClientLacks(ch *Channel) {
 }
 
 func (this *ChannelPool) putServer(ch *Channel) {
-	this.pool[ch.chidsrv] = ch
+	if ch.chidsrv != 0 {
+		this.pool[ch.chidsrv] = ch
+	}
 	this.pool2[ch.conv] = ch
 	appevt.Trigger("chanact", 1, len(this.pool), len(this.pool2))
 }
@@ -344,6 +348,7 @@ func (this *Packet) toJson() []byte {
 func (this *Packet) toJsonImpl() []byte {
 	jso := simplejson.New()
 	jso.Set(CMDKEYTNAME, this.Tunname)
+	jso.Set(CMDKEYTPROTO, this.Tunproto)
 	jso.Set(CMDKEYCHANIDCLIENT, this.Chidcli)
 	jso.Set(CMDKEYCHANIDSERVER, this.Chidsrv)
 	jso.Set(CMDKEYCOMMAND, this.Command)
@@ -351,7 +356,6 @@ func (this *Packet) toJsonImpl() []byte {
 	if !this.isdata() {
 		jso.Set(CMDKEYREMIP, this.Remoteip)
 		jso.Set(CMDKEYREMPORT, this.Remoteport)
-		jso.Set(CMDKEYTPROTO, this.Tunproto)
 	}
 	jso.Set(CMDKEYCONV, this.Conv)
 	jso.Set(CMDKEYMSGID, this.Msgid)
@@ -390,13 +394,13 @@ func parsePacketFromJson(buf []byte) *Packet {
 
 	pkt := new(Packet)
 	pkt.Tunname = jso.Get(CMDKEYTNAME).MustString()
+	pkt.Tunproto = jso.Get(CMDKEYTPROTO).MustString()
 	pkt.Chidcli = int32(jso.Get(CMDKEYCHANIDCLIENT).MustInt())
 	pkt.Chidsrv = int32(jso.Get(CMDKEYCHANIDSERVER).MustInt())
 	pkt.Command = jso.Get(CMDKEYCOMMAND).MustString()
 	if !pkt.isdata() {
 		pkt.Remoteip = jso.Get(CMDKEYREMIP).MustString()
 		pkt.Remoteport = jso.Get(CMDKEYREMPORT).MustString()
-		pkt.Tunproto = jso.Get(CMDKEYTPROTO).MustString()
 	}
 	pkt.Conv = uint32(jso.Get(CMDKEYCONV).MustUint64())
 	pkt.Msgid = jso.Get(CMDKEYMSGID).MustUint64()

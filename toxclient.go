@@ -117,7 +117,7 @@ func makeTox(name string) *tox.Tox {
 			t.FriendAddNorequest(fid)
 		}
 	}
-	debug.Println("add friends:", len(fv))
+	debug.Println("added friends:", len(fv))
 
 	return t
 }

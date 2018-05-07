@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"strings"
 	// "log"
 	"bytes"
 	"encoding/binary"
@@ -180,6 +181,24 @@ func (this *Tunneld) serveKcp() {
 		}
 	}
 }
+func (this *Tunneld) kcpUpdate(ch *Channel) {
+	ch.kcp.Update()
+
+	zbuf := make([]byte, 0)
+	n := ch.kcp.Recv(zbuf)
+	debug.Println("kcp recv:", n, ch.conv, ch.kcp.rcv_nxt, ch.kcp.rcv_wnd,
+		len(ch.kcp.rcv_buf), len(ch.kcp.rcv_queue))
+	switch n {
+	case -3:
+		this.processKcpReadyRead(ch)
+	case -2: // just empty kcp recv queue
+		// errl.Println("kcp recv internal error:", n, this.kcp.PeekSize())
+	case -1: // EAGAIN
+	default:
+		errl.Println("unknown recv:", n)
+	}
+}
+
 func (this *Tunneld) kcpCheckClose() {
 	closed := make([]*Channel, 0)
 	for _, ch := range this.chpool.pool {
@@ -222,12 +241,25 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 	}
 }
 
+func isUdpBareChannel(ch *Channel) bool {
+	return ch != nil && ch.conv > 0 && ch.toxid != "" && ch.chidcli > 0 &&
+		ch.kcp != nil && ch.conn == nil && ch.chidsrv == 0 && ch.tname == ""
+}
 func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	if ch.conn == nil {
-		errl.Println("Not Connected:", ch.chidsrv, ch.chidcli, ch.tname)
+		if isUdpBareChannel(ch) {
+			// fix the channel info
+		} else {
+			info.Printf("%+v\n", ch)
+			errl.Println("Not Connected:", ch.chidsrv, ch.chidcli, ch.tname)
+		}
 		// return
 	}
 
+	debug.Println("bufed size:", ch.kcp.PeekSize())
+	if ch.kcp.PeekSize() == -1 {
+		errl.Println("kcp not ready:")
+	}
 	buf := make([]byte, ch.kcp.PeekSize())
 	n := ch.kcp.Recv(buf)
 
@@ -236,6 +268,21 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	}
 
 	pkt := parsePacket(buf)
+	if ch.conn == nil && isUdpBareChannel(ch) && pkt.isdata() {
+		// fix the channel info
+		this.fixUdpBareChannel(ch, pkt)
+	}
+
+	if ch.tproto == "tcp" {
+		this.processKcpReadyReadTcp(ch, pkt)
+	} else if ch.tproto == "udp" {
+		this.processKcpReadyReadUdp(ch, pkt)
+	} else {
+		errl.Println("Unsupport proto:", ch.tproto)
+	}
+}
+
+func (this *Tunneld) processKcpReadyReadTcp(ch *Channel, pkt *Packet) {
 	if pkt.isconnack() {
 	} else if pkt.isdata() {
 		ch := this.chpool.pool[pkt.Chidsrv]
@@ -250,6 +297,71 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 		appevt.Trigger("reqbytes", wn, len(buf)+25)
 	} else {
 	}
+}
+
+func (this *Tunneld) processKcpReadyReadUdp(ch *Channel, pkt *Packet) {
+	if pkt.isconnack() {
+	} else if pkt.isdata() {
+		ch := this.chpool.pool[pkt.Chidsrv]
+		debug.Println("processing channel data:", ch.chidsrv, len(pkt.Data), gopp.StrSuf(string(pkt.Data), 52))
+
+		buf := pkt.Data
+		wn, err := ch.conn.Write(buf)
+		if err != nil {
+			errl.Println(err)
+		}
+		debug.Println("kcp->srv:", wn)
+		appevt.Trigger("reqbytes", wn, len(buf)+25)
+	} else {
+	}
+}
+
+func (this *Tunneld) fixUdpBareChannel(ch *Channel, pkt *Packet) error {
+	info.Printf("New conn on tunnel %s to %s:%s:%s\n", pkt.Tunname, pkt.Tunproto, pkt.Remoteip, pkt.Remoteport)
+	ch.tname = pkt.Tunname
+	ch.tproto = pkt.Tunproto
+	ch.chidcli = pkt.Chidcli
+	ch.chidsrv = pkt.Chidsrv
+	ch.ip = pkt.Remoteip
+	ch.port = pkt.Remoteport
+
+	this.listenUdpTunnel(ch)
+	this.chpool.putServer(ch)
+	return nil
+}
+
+func (this *Tunneld) listenUdpTunnel(ch *Channel) {
+	tunnelServerPort := ch.chidsrv
+	srv, err := ListenUdpPortAuto(int(tunnelServerPort), "127.0.0.1")
+	if err != nil {
+		log.Println(lerrorp, err)
+	}
+	go this.serveUdpTunnel(ch, srv)
+}
+
+// should block
+// recv udp and send to kcp
+func (this *Tunneld) serveUdpTunnel(ch *Channel, srv net.PacketConn) {
+	tname := ch.tname
+	for {
+		//simple read
+		buffer := make([]byte, 1024)
+		rn, addr, err := srv.ReadFrom(buffer)
+		log.Println(rn, addr, err, string(buffer[:rn]))
+		if err != nil {
+			continue
+		}
+		this.processServerReadyRead(ch, buffer[:rn], rn)
+		// TODO send to tunnel server
+		//simple write
+		if false {
+			srv.WriteTo([]byte("Hello from client"), nil)
+		}
+		if false {
+			break
+		}
+	}
+	info.Println("done:", tname, ch.chidcli, ch.chidsrv)
 }
 
 // should block
@@ -416,12 +528,17 @@ func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 }
 
 // a tool function
-func (this *Tunneld) makeKcpConv(friendId string, pkt *Packet) uint32 {
+func makeKcpConv(friendId string, remip string, remport string) uint32 {
 	// crc32: toxid+host+port+time
-	data := fmt.Sprintf("%s@%s:%s@%d", friendId, pkt.Remoteip, pkt.Remoteport,
-		time.Now().UnixNano())
+	data := fmt.Sprintf("%s@%s:%s@%d", friendId, remip, remport, time.Now().UnixNano())
 	conv := crc32.ChecksumIEEE(bytes.NewBufferString(data).Bytes())
 	return conv
+}
+
+// a tool function
+func (this *Tunneld) makeKcpConv(friendId string, pkt *Packet) uint32 {
+	// crc32: toxid+host+port+time
+	return makeKcpConv(friendId, pkt.Remoteip, pkt.Remoteport)
 }
 func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
@@ -445,10 +562,10 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			ch.toxid = friendId
 			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 			ch.kcp.SetMtu(tunmtu)
-			if kcp_mode == "fast" {
+			if strings.HasPrefix(kcp_mode, "fast") {
 				ch.kcp.WndSize(128, 128)
-				ch.kcp.NoDelay(1, 10, 2, 1)
 			}
+			ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
 
 			go this.connectToBackend(ch)
 
@@ -470,20 +587,100 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 
 func (this *Tunneld) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52), time.Now().String())
-	buf := bytes.NewBufferString(message).Bytes()
-	if buf[0] == 254 {
-		buf = buf[1:]
-		// kcp包前4字段为conv，little hacky
-		conv := binary.LittleEndian.Uint32(buf)
-		ch := this.chpool.pool2[conv]
-		if ch == nil {
-			info.Println("channel not found, maybe has some problem, maybe closed", conv)
+	buf := []byte(message)
+	if buf[0] != 254 {
+		info.Println("unknown message:", buf[0])
+		return
+	}
+
+	buf = buf[1:]
+	// kcp包前4字节为conv，little hacky
+	conv := binary.LittleEndian.Uint32(buf)
+	if conv == 0 {
+		// info.Println("channel conv = 0, maybe invalid", conv)
+	}
+	ch := this.chpool.pool2[conv]
+	if ch == nil {
+		if conv > 0 {
+			// info.Println("channel not found, maybe udp packet, maybe invalid", conv)
+			// if ch == nil && conv > 0
+			this.onToxnetFriendLossyPacket4Udp(t, friendNumber, message, userData)
 		} else {
-			n := ch.kcp.Input(buf, true, true)
-			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+			info.Println("channel not found, maybe has some problem, maybe closed", conv)
 		}
 	} else {
+		n := ch.kcp.Input(buf, true, false)
+		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+		debug.Println(isUdpBareChannel(ch))
+		if isUdpBareChannel(ch) {
+			this.kcpUpdate(ch) // manually update it for process ready read
+			if ch.kcp.PeekSize() > 0 {
+				this.processKcpReadyRead(ch)
+			}
+		}
+	}
+}
+
+func (this *Tunneld) onToxnetFriendLossyPacket4Udp(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
+	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52), time.Now().String())
+	buf := []byte(message)
+	if buf[0] != 254 {
 		info.Println("unknown message:", buf[0])
+		return
+	}
+
+	buf = buf[1:]
+	// kcp包前4字节为conv，little hacky
+	conv := binary.LittleEndian.Uint32(buf)
+	if conv == 0 {
+		// info.Println("channel conv = 0, maybe invalid", conv)
+	}
+	ch := this.chpool.pool2[conv]
+	if ch == nil {
+		if conv > 0 {
+			info.Println("channel not found, maybe udp packet, maybe invalid", conv)
+			debug.Println(friendNumber, len(message), message[4:], time.Now().String())
+			// debug.Println(friendNumber, len(message), gopp.StrSuf(message[4:], 52), time.Now().String())
+			// if ch == nil && conv > 0
+			// create channel and kcp
+			// listen a temp udp port
+			// recv from this udp port
+			// send back to kcp
+			ch = NewChannelClient(nil, "")
+			ch.conv = conv
+			friendId, _ := t.FriendGetPublicKey(friendNumber)
+			ch.toxid = friendId
+			this.chpool.putServer(ch)
+
+			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+			ch.kcp.SetMtu(tunmtu)
+			if strings.HasPrefix(kcp_mode, "fast") {
+				ch.kcp.WndSize(128, 128)
+			}
+			ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
+
+			seg := kcp_parse_segment(buf)
+			debug.Printf("%+v\n", seg)
+			kcp_reset_by_seg(ch.kcp, seg)
+			n := ch.kcp.Input(buf, true, false)
+			debug.Println(n, ch.kcp.rcv_nxt, len(ch.kcp.rcv_buf), len(ch.kcp.rcv_queue), ch.kcp.PeekSize())
+			// errl.Println("not finished")
+			if ch.kcp.PeekSize() < 0 {
+				info.Println("maybe broken pkt, omit")
+				// ch.kcp.Input(buf, true, true)
+				this.chpool.rmServer(ch)
+			} else if ch.kcp.PeekSize() > 0 {
+				debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+				this.kcpUpdate(ch) // manually update it for process ready read
+				if ch.kcp.PeekSize() > 0 {
+					this.processKcpReadyRead(ch)
+				}
+			}
+		} else {
+			info.Println("channel not found, maybe has some problem, maybe closed", conv)
+		}
+	} else {
+		// this.onToxnetFriendLossyPacket is processed
 	}
 }
 

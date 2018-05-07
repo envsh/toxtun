@@ -22,6 +22,8 @@ type SpeedMode struct {
 	kcp_interval int
 
 	nodelay, interval, resend, nc int
+
+	wndsz int
 }
 
 // fast3 > fast2 > fast > normal > default
@@ -30,20 +32,20 @@ const tox_interval = 200
 const kcp_interval = 75 // 50-100
 
 var SMTcp = &SpeedMode{name: "default-tcp", tox_interval: tox_interval, kcp_interval: kcp_interval,
-	nodelay: 0, interval: 100, resend: 0, nc: 0}
+	nodelay: 0, interval: 100, resend: 0, nc: 0, wndsz: 32}
 var SMDefault = SMTcp
 
 var SMNormal = &SpeedMode{name: "normal", tox_interval: tox_interval, kcp_interval: kcp_interval,
-	nodelay: 0, interval: 50, resend: 0, nc: 0}
+	nodelay: 0, interval: 50, resend: 0, nc: 0, wndsz: 32}
 
 var SMFast = &SpeedMode{name: "fast", tox_interval: tox_interval, kcp_interval: kcp_interval,
-	nodelay: 1, interval: 40, resend: 2, nc: 1}
+	nodelay: 1, interval: 40, resend: 2, nc: 1, wndsz: 64}
 
 var SMFast2 = &SpeedMode{name: "fast2", tox_interval: tox_interval, kcp_interval: kcp_interval,
-	nodelay: 1, interval: 20, resend: 2, nc: 1}
+	nodelay: 1, interval: 20, resend: 2, nc: 1, wndsz: 96}
 
 var SMFast3 = &SpeedMode{name: "fast3", tox_interval: tox_interval, kcp_interval: kcp_interval,
-	nodelay: 1, interval: 10, resend: 2, nc: 1}
+	nodelay: 1, interval: 10, resend: 2, nc: 1, wndsz: 128}
 
 var smuse = SMTcp
 

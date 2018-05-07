@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	// "strings"
 	"bytes"
 	"encoding/binary"
@@ -147,6 +148,31 @@ func (this *Tunnelc) listenTunnels() {
 			}
 			this.srvs[tunrec.tname] = newTunListenerUdp(srv)
 
+			// init udp channel
+			ch := NewChannelClient(nil, tname)
+			tunrec := config.getRecordByName(tname)
+			ch.tproto = tunrec.tproto
+			ch.ip = tunrec.rhost
+			ch.port = fmt.Sprintf("%d", tunrec.rport)
+			ch.chidcli = int32(tunrec.lport)
+			ch.chidsrv = int32(tunrec.rport)
+			this.chpool.putClient(ch)
+			log.Println(ch.chidcli, ch.tname, ch.tproto)
+
+			ch.conv = makeKcpConv(tunrec.rpubkey[:64], tunrec.rhost, fmt.Sprintf("%d", tunrec.rport))
+			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+			ch.kcp.SetMtu(tunmtu)
+			if strings.HasPrefix(kcp_mode, "fast") {
+				ch.kcp.WndSize(128, 128)
+			}
+			ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
+			this.chpool.putClientLacks(ch)
+
+			info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, ch.tname, ch.tproto)
+			appevt.Trigger("connok")
+			appevt.Trigger("connact", 1)
+			ch.conn_ack_recved = true
+
 		} else {
 			log.Panicln("wtf,", tunrec)
 		}
@@ -163,13 +189,15 @@ func (this *Tunnelc) serveTunnels() {
 	srvs := this.srvs
 	for tname, srv := range srvs {
 		if srv.proto == "tcp" {
-			go this.serveTunnel(tname, srv.tcplsn)
+			go this.serveTunnelTcp(tname, srv.tcplsn)
+		} else {
+			go this.serveTunnelUdp(tname, srv.udplsn)
 		}
 	}
 }
 
 // should blcok
-func (this *Tunnelc) serveTunnel(tname string, srv net.Listener) {
+func (this *Tunnelc) serveTunnelTcp(tname string, srv net.Listener) {
 
 	for {
 		c, err := srv.Accept()
@@ -181,6 +209,36 @@ func (this *Tunnelc) serveTunnel(tname string, srv net.Listener) {
 		this.newConnChan <- NewConnEvent{c, 0, time.Now(), tname}
 		appevt.Trigger("newconn", tname)
 	}
+}
+
+// should blcok
+func (this *Tunnelc) serveTunnelUdp(tname string, srv net.PacketConn) {
+
+	tunrec := config.getRecordByName(tname)
+	log.Println(tname, tunrec)
+	ch := this.chpool.pool[int32(tunrec.lport)]
+	if ch == nil {
+		log.Panicln("can not nil", tname)
+	}
+	for {
+		//simple read
+		buffer := make([]byte, 1024)
+		rn, addr, err := srv.ReadFrom(buffer)
+		log.Println(rn, addr, err, string(buffer[:rn]))
+		if err != nil {
+			continue
+		}
+		this.processClientReadyRead(ch, buffer[:rn], rn)
+		// TODO send to tunnel server
+		//simple write
+		if false {
+			srv.WriteTo([]byte("Hello from client"), nil)
+		}
+		if false {
+			break
+		}
+	}
+	info.Println("done:", tname)
 }
 
 func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, tname string) {
@@ -372,7 +430,7 @@ func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 	sbuf := buf
 	pkt := ch.makeDataPacket(sbuf)
 	sn := ch.kcp.Send(pkt.toJson())
-	debug.Println("cli->kcp:", sn, ch.conv)
+	debug.Println("cli->kcp:", sn, ch.conv, ch.tname, ch.tproto)
 	appevt.Trigger("reqbytes", size, len(pkt.toJson())+25)
 }
 
@@ -462,9 +520,8 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				ch.chidsrv = pkt.Chidsrv
 				ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 				ch.kcp.SetMtu(tunmtu)
-				if kcp_mode == "fast" {
+				if strings.HasPrefix(kcp_mode, "fast") {
 					ch.kcp.WndSize(128, 128)
-					ch.kcp.NoDelay(1, 10, 2, 1)
 				}
 				ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
 				this.chpool.putClientLacks(ch)
@@ -536,7 +593,7 @@ func (this *Tunnelc) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 	if buf[0] == 191 { // lossypacket
 		buf = buf[1:]
 		var conv uint32
-		// kcp包前4字段为conv，little hacky
+		// kcp包前4字节为conv，little hacky
 		if len(buf) < 4 {
 			errl.Println("wtf")
 		}
