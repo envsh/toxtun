@@ -1,13 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"math"
 	// "log"
 	"bytes"
 	"encoding/binary"
-	"hash/crc32"
 	"net"
 	"time"
 
@@ -418,10 +416,7 @@ func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 // a tool function
 func (this *Tunneld) makeKcpConv(friendId string, pkt *Packet) uint32 {
 	// crc32: toxid+host+port+time
-	data := fmt.Sprintf("%s@%s:%s@%d", friendId, pkt.Remoteip, pkt.Remoteport,
-		time.Now().UnixNano())
-	conv := crc32.ChecksumIEEE(bytes.NewBufferString(data).Bytes())
-	return conv
+	return makeKcpConv(friendId, pkt.Remoteip, pkt.Remoteport)
 }
 func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
@@ -445,10 +440,7 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 			ch.toxid = friendId
 			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 			ch.kcp.SetMtu(tunmtu)
-			if kcp_mode == "fast" {
-				ch.kcp.WndSize(128, 128)
-				ch.kcp.NoDelay(1, 10, 2, 1)
-			}
+			ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
 
 			go this.connectToBackend(ch)
 
@@ -492,7 +484,7 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 	buf := bytes.NewBufferString(message).Bytes()
 	if buf[0] == 191 {
 		buf = buf[1:]
-		// kcp包前4字段为conv，little hacky
+		// kcp包前4字节为conv，little hacky
 		if len(buf) < 4 {
 			errl.Println("wtf")
 		}

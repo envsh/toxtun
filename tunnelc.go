@@ -462,10 +462,7 @@ func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 				ch.chidsrv = pkt.Chidsrv
 				ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
 				ch.kcp.SetMtu(tunmtu)
-				if kcp_mode == "fast" {
-					ch.kcp.WndSize(128, 128)
-					ch.kcp.NoDelay(1, 10, 2, 1)
-				}
+				ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
 				ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
 				this.chpool.putClientLacks(ch)
 
@@ -536,7 +533,7 @@ func (this *Tunnelc) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 	if buf[0] == 191 { // lossypacket
 		buf = buf[1:]
 		var conv uint32
-		// kcp包前4字段为conv，little hacky
+		// kcp包前4字节为conv，little hacky
 		if len(buf) < 4 {
 			errl.Println("wtf")
 		}
