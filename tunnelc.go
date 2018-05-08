@@ -23,10 +23,14 @@ type TunListener struct {
 	proto  string
 	tcplsn net.Listener
 	udplsn net.PacketConn
+	fulsn  net.Listener
 }
 
 func newTunListenerUdp(lsn net.PacketConn) *TunListener {
 	return &TunListener{proto: "udp", udplsn: lsn}
+}
+func newTunListenerUdp2(lsn net.Listener) *TunListener {
+	return &TunListener{proto: "udp", fulsn: lsn}
 }
 func newTunListenerTcp(lsn net.Listener) *TunListener { return &TunListener{proto: "tcp", tcplsn: lsn} }
 
@@ -140,13 +144,12 @@ func (this *Tunnelc) listenTunnels() {
 			}
 			this.srvs[tunrec.tname] = newTunListenerTcp(srv)
 		} else if tunrec.tproto == "udp" {
-			srv, err := net.ListenPacket("udp", fmt.Sprintf(":%d", tunnelServerPort))
+			srv, err := ListenUDP(fmt.Sprintf(":%d", tunnelServerPort))
 			if err != nil {
-				log.Println(lerrorp, err)
+				log.Println(lerrorp, err, tname, tunnelServerPort)
 				continue
 			}
-			this.srvs[tunrec.tname] = newTunListenerUdp(srv)
-
+			this.srvs[tunrec.tname] = newTunListenerUdp2(srv)
 		} else {
 			log.Panicln("wtf,", tunrec)
 		}
@@ -164,13 +167,31 @@ func (this *Tunnelc) serveTunnels() {
 	for tname, srv := range srvs {
 		if srv.proto == "tcp" {
 			go this.serveTunnel(tname, srv.tcplsn)
+		} else if srv.proto == "udp" {
+			go this.serveTunnelUdp(tname, srv.fulsn)
+			// go this.serveTunnelUdp(tname, srv.udplsn)
 		}
 	}
 }
 
 // should blcok
 func (this *Tunnelc) serveTunnel(tname string, srv net.Listener) {
+	info.Println("serving tcp:", tname, srv.Addr())
+	for {
+		c, err := srv.Accept()
+		if err != nil {
+			info.Println(err)
+		}
+		// info.Println(c)
+		info.Println("New connection from/to:", c.RemoteAddr(), c.LocalAddr(), tname)
+		this.newConnChan <- NewConnEvent{c, 0, time.Now(), tname}
+		appevt.Trigger("newconn", tname)
+	}
+}
 
+// should blcok
+func (this *Tunnelc) serveTunnelUdp(tname string, srv net.Listener) {
+	info.Println("serving udp:", tname, srv.Addr())
 	for {
 		c, err := srv.Accept()
 		if err != nil {

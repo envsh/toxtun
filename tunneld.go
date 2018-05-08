@@ -255,7 +255,17 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	this.chpool.putServer(ch)
 
 	// Dial
-	conn, err := net.Dial("tcp", net.JoinHostPort(ch.ip, ch.port))
+	var conn net.Conn
+	var err error
+	// TODO 如果连接失败，响应的包会导致client崩溃
+	if ch.tproto == "tcp" {
+		conn, err = net.Dial("tcp", net.JoinHostPort(ch.ip, ch.port))
+	} else if ch.tproto == "udp" {
+		conn, err = net.Dial("udp", net.JoinHostPort(ch.ip, ch.port))
+	} else {
+		log.Panicln("not supported proto:", ch.tproto)
+	}
+
 	if err != nil {
 		errl.Println(err, ch.chidcli, ch.chidsrv, ch.conv, ch.tname)
 		// 连接结束
