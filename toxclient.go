@@ -29,6 +29,7 @@ var tox_disable_udp = false
 func init() {
 	flag.BoolVar(&tox_disable_udp, "disable-udp", tox_disable_udp,
 		fmt.Sprintf("if tox disable udp, default: %v", tox_disable_udp))
+	flag.BoolVar(&useFixedBSs, "use-fixedbs", useFixedBSs, "use fixed bootstraps, possible faster.")
 }
 
 func makeTox(name string) *tox.Tox {
@@ -51,13 +52,12 @@ func makeTox(name string) *tox.Tox {
 	port := 33445
 	var t *tox.Tox
 	for i := 0; i < 71; i++ {
-		opt.Tcp_port = uint16(port)
+		opt.Tcp_port = uint16(port + 1)
 		// opt.Tcp_port = 0
 		t = tox.NewTox(opt)
 		if t != nil {
 			break
 		}
-		port += 1
 	}
 	if t == nil {
 		panic(nil)
@@ -72,11 +72,17 @@ func makeTox(name string) *tox.Tox {
 	}
 
 	for i := 0; i < len(servers)/3; i++ {
+		if useFixedBSs {
+			continue
+		}
 		r := i * 3
 		ipstr, port, pubkey := servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string)
 		r1, err := t.Bootstrap(ipstr, port, pubkey)
 		r2, err := t.AddTcpRelay(ipstr, port, pubkey)
 		info.Println("bootstrap:", r1, err, r2, i, r, ipstr, port)
+	}
+	if useFixedBSs {
+		addFixedBootstraps(t)
 	}
 
 	pubkey := t.SelfGetPublicKey()
@@ -122,6 +128,17 @@ func makeTox(name string) *tox.Tox {
 	return t
 }
 
+var useFixedBSs = false
+
+func addFixedBootstraps(t *tox.Tox) {
+	if useFixedBSs {
+		node := []interface{}{"cotox.tk", uint16(33445), "AF66C5FFAA6CA67FB8E287A5B1D8581C15B446E12BF330963EF29E3AFB692918"}
+		_, err := t.AddTcpRelay(node[0].(string), node[1].(uint16), node[2].(string))
+		_, err = t.AddTcpRelay(node[0].(string), node[1].(uint16), node[2].(string))
+		log.Println("hehehe", err == nil)
+	}
+}
+
 func iterate(t *tox.Tox) {
 	// toxcore loops
 	shutdown := false
@@ -156,6 +173,9 @@ func iterate(t *tox.Tox) {
 func switchServer(t *tox.Tox) {
 	newNodes := get3nodes()
 	for _, node := range newNodes {
+		if useFixedBSs {
+			continue
+		}
 		r1, err := t.Bootstrap(node.ipaddr, node.port, node.pubkey)
 		if node.status_tcp {
 			r2, err := t.AddTcpRelay(node.ipaddr, node.port, node.pubkey)
@@ -166,6 +186,8 @@ func switchServer(t *tox.Tox) {
 		}
 	}
 	currNodes = newNodes
+
+	addFixedBootstraps(t)
 }
 
 func get3nodes() (nodes [3]ToxNode) {

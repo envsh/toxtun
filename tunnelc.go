@@ -436,7 +436,7 @@ func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra 
 func (this *Tunnelc) onToxnetSelfConnectionStatusImpl(t *tox.Tox, status int, extra interface{},
 	tname string, toxtunid string) {
 	friendNumber, err := t.FriendByPublicKey(toxtunid)
-	log.Println(friendNumber, err)
+	log.Println(friendNumber, err, len(toxtunid), toxtunid)
 	if err == nil {
 		if false {
 			t.FriendDelete(friendNumber)
