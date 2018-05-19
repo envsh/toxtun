@@ -1,7 +1,9 @@
 package main
 
 import (
+	"log"
 	"net/http"
+	"sync"
 	// "strings"
 	"bytes"
 	"fmt"
@@ -43,6 +45,8 @@ type Stats struct {
 	peerOnline       bool
 	selfOfflineCount int
 	peerOfflineCount int
+
+	evtmu sync.Mutex
 }
 
 func NewStates() *Stats {
@@ -59,6 +63,9 @@ func init() {
 	appevt.On("*", processEvent)
 }
 func processEvent(args ...interface{}) {
+	sts.evtmu.Lock()
+	defer sts.evtmu.Unlock()
+
 	evt := args[0].(string)
 	switch evt {
 	case "newconn":
@@ -96,6 +103,8 @@ func processEvent(args ...interface{}) {
 }
 
 func updateStats() {
+	sts.evtmu.Lock()
+	defer sts.evtmu.Unlock()
 
 	rnum := runtime.NumGoroutine()
 	if sts.minGoRoutine == 0 {
@@ -126,6 +135,9 @@ func updateStats() {
 func indexHandler(w http.ResponseWriter, req *http.Request) {
 	w.Header().Add("Content-Type", mime.TypeByExtension(".txt"))
 	w.WriteHeader(200)
+
+	sts.evtmu.Lock()
+	defer sts.evtmu.Unlock()
 
 	rnum := runtime.NumGoroutine()
 	msts := runtime.MemStats{}
@@ -193,5 +205,16 @@ func (this *StatServer) serve() {
 	}()
 
 	http.HandleFunc("/", indexHandler)
-	http.ListenAndServe(":33444", nil)
+
+	for i := 9981; i < 9981+100; i++ {
+		log.Println(linfop, "Try Listen stats port: ", i)
+		err := http.ListenAndServe(fmt.Sprintf(":%d", i), nil)
+		if err != nil {
+			log.Println(lerrorp, err)
+			continue
+		} else {
+			log.Println(linfop)
+			break
+		}
+	}
 }

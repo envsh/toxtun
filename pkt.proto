@@ -1,0 +1,18 @@
+syntax = "proto3";
+package main;
+
+message PacketDemo 
+{
+    int32  Version = 1;
+	int32 Chidcli     = 2;
+	int32 Chidsrv     = 3;
+	string Command     = 4;
+	string Remoteip    = 5;
+	string Remoteport  = 6;
+	uint32 Conv        = 7;
+	uint64 Msgid       = 8;
+    bool   Compress    = 9;
+	string Data        = 10;
+}
+;
+

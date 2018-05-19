@@ -1,15 +1,16 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"sort"
+	"strings"
 	"time"
 
-	"github.com/kitech/go-toxcore"
-
+	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/bitly/go-simplejson"
 )
 
@@ -22,16 +23,25 @@ var servers = []interface{}{
 	// "127.0.0.1", uint16(33445), "398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC52",
 }
 
-var fname string
+var tox_savedata_fname string
+var tox_disable_udp = false
+
+func init() {
+	flag.BoolVar(&tox_disable_udp, "disable-udp", tox_disable_udp,
+		fmt.Sprintf("if tox disable udp, default: %v", tox_disable_udp))
+	flag.BoolVar(&useFixedBSs, "use-fixedbs", useFixedBSs, "use fixed bootstraps, possible faster.")
+}
 
 func makeTox(name string) *tox.Tox {
-	fname = fmt.Sprintf("./%s.data", name)
+	tox_savedata_fname = fmt.Sprintf("./%s.data", name)
 	var nickPrefix = fmt.Sprintf("%s.", name)
 	var statusText = fmt.Sprintf("%s of toxtun", name)
 
 	opt := tox.NewToxOptions()
-	if tox.FileExist(fname) {
-		data, err := ioutil.ReadFile(fname)
+	opt.Udp_enabled = !tox_disable_udp
+
+	if tox.FileExist(tox_savedata_fname) {
+		data, err := ioutil.ReadFile(tox_savedata_fname)
 		if err != nil {
 			errl.Println(err)
 		} else {
@@ -41,28 +51,38 @@ func makeTox(name string) *tox.Tox {
 	}
 	port := 33445
 	var t *tox.Tox
-	for i := 0; i < 7; i++ {
-		opt.Tcp_port = uint16(port)
+	for i := 0; i < 71; i++ {
+		opt.Tcp_port = uint16(port + 1)
 		// opt.Tcp_port = 0
 		t = tox.NewTox(opt)
 		if t != nil {
 			break
 		}
-		port += 1
 	}
 	if t == nil {
 		panic(nil)
 	}
-	info.Println("TCP port:", opt.Tcp_port)
+	if tox_disable_udp {
+		info.Println("TCP port:", opt.Tcp_port)
+	} else {
+		info.Println("TCP port:", "disabled")
+	}
 	if false {
 		time.Sleep(1 * time.Hour)
 	}
 
 	for i := 0; i < len(servers)/3; i++ {
+		if useFixedBSs {
+			continue
+		}
 		r := i * 3
-		r1, err := t.Bootstrap(servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string))
-		r2, err := t.AddTcpRelay(servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string))
-		info.Println("bootstrap:", r1, err, r2, i, r)
+		ipstr, port, pubkey := servers[r+0].(string), servers[r+1].(uint16), servers[r+2].(string)
+		r1, err := t.Bootstrap(ipstr, port, pubkey)
+		r2, err := t.AddTcpRelay(ipstr, port, pubkey)
+		info.Println("bootstrap:", r1, err, r2, i, r, ipstr, port)
+	}
+	if useFixedBSs {
+		addFixedBootstraps(t)
 	}
 
 	pubkey := t.SelfGetPublicKey()
@@ -90,7 +110,7 @@ func makeTox(name string) *tox.Tox {
 	debug.Println("savedata:", sz, t)
 	debug.Println("savedata", len(sd), t)
 
-	err = t.WriteSavedata(fname)
+	err = t.WriteSavedata(tox_savedata_fname)
 	debug.Println("savedata write:", err)
 
 	// add friend norequest
@@ -103,9 +123,20 @@ func makeTox(name string) *tox.Tox {
 			t.FriendAddNorequest(fid)
 		}
 	}
-	debug.Println("add friends:", len(fv))
+	debug.Println("added friends:", len(fv))
 
 	return t
+}
+
+var useFixedBSs = false
+
+func addFixedBootstraps(t *tox.Tox) {
+	if useFixedBSs {
+		node := []interface{}{"cotox.tk", uint16(33445), "AF66C5FFAA6CA67FB8E287A5B1D8581C15B446E12BF330963EF29E3AFB692918"}
+		_, err := t.AddTcpRelay(node[0].(string), node[1].(uint16), node[2].(string))
+		_, err = t.AddTcpRelay(node[0].(string), node[1].(uint16), node[2].(string))
+		log.Println("hehehe", err == nil)
+	}
 }
 
 func iterate(t *tox.Tox) {
@@ -142,6 +173,9 @@ func iterate(t *tox.Tox) {
 func switchServer(t *tox.Tox) {
 	newNodes := get3nodes()
 	for _, node := range newNodes {
+		if useFixedBSs {
+			continue
+		}
 		r1, err := t.Bootstrap(node.ipaddr, node.port, node.pubkey)
 		if node.status_tcp {
 			r2, err := t.AddTcpRelay(node.ipaddr, node.port, node.pubkey)
@@ -152,6 +186,8 @@ func switchServer(t *tox.Tox) {
 		}
 	}
 	currNodes = newNodes
+
+	addFixedBootstraps(t)
 }
 
 func get3nodes() (nodes [3]ToxNode) {
@@ -187,7 +223,7 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 	initThirdPartyNodes()
 	initToxNodes()
-	go pingNodes()
+	// go pingNodes()
 }
 
 // fixme: chown root.root toxtun-go && chmod u+s toxtun-go
@@ -312,3 +348,27 @@ type ByRand []ToxNode
 func (this ByRand) Len() int           { return len(this) }
 func (this ByRand) Swap(i, j int)      { this[i], this[j] = this[j], this[i] }
 func (this ByRand) Less(i, j int) bool { return rand.Int()%2 == 0 }
+
+var livebots = []string{
+	"56A1ADE4B65B86BCD51CC73E2CD4E542179F47959FE3E0E21B4B0ACDADE51855D34D34D37CB5", // groupbot
+	"76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335A235342C48A39218F515C39A6", //echobot@toxme.io
+	"DD7A68B345E0AA918F3544AA916B5CA6AED6DE80389BFF1EF7342DACD597943D62BDEED1FC67", // my echobot
+	"03F47F0AE26BE32C73579CBA2C5421A159EDFF74535A7E8C6480398D93A0EA2E02B1B20B80D7", // DobroBot
+	"A922A51E1C91205B9F7992E2273107D47C72E8AE909C61C28A77A4A2A115431B14592AB38A3B", // toxirc
+	"5EE85FD7B4B6BD8FD113A1E8CC5853A233008B574E07F2CC76A7EA43AE24AE0754DBD6B8FD3F", // ToxIRCBotCN
+	"415732B8A549B2A1F9A278B91C649B9E30F07330E8818246375D19E52F927C57F08A44E082F6", // LainBot
+	"398C8161D038FD328A573FFAA0F5FAAF7FFDE5E8B4350E7D15E6AFD0B993FC529FA90C343627", // envoy
+}
+
+func addLiveBots(t *tox.Tox) {
+	for _, botid := range livebots {
+		t.FriendAdd(botid, "hello")
+	}
+}
+
+func livebotsOnFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status int) {
+	fid, _ := t.FriendGetPublicKey(friendNumber)
+	if strings.HasPrefix(livebots[5], fid) {
+		t.FriendSendMessage(friendNumber, "/mute on")
+	}
+}
