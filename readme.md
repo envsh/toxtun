@@ -58,7 +58,7 @@
 ### TODOs
 - [x] 配置参数
 - [x] 统计服务模块
-- [ ] 多端口tunnel支持
+- [x] 多端口tunnel支持
 - [x] 数据编码：JSON=>MsgPack=>Protobuf
 - [x] toxnet/friend失联重连
 - [x] 关闭连接原因

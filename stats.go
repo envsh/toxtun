@@ -204,7 +204,7 @@ func (this *StatServer) serve() {
 		}
 	}()
 
-	http.HandleFunc("/", indexHandler)
+	http.HandleFunc("/stats", indexHandler)
 
 	for i := 9981; i < 9981+100; i++ {
 		log.Println(linfop, "Try Listen stats port: ", i)
