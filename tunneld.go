@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
 	"math"
 	// "log"
@@ -10,12 +11,15 @@ import (
 	"time"
 
 	tox "github.com/TokTok/go-toxcore-c"
+	"github.com/envsh/go-toxcore/mintox"
 	"github.com/kitech/goplusplus"
 )
 
 type Tunneld struct {
-	tox    *tox.Tox
-	chpool *ChannelPool
+	tox     *tox.Tox
+	mtox    *MTox
+	usemtox bool
+	chpool  *ChannelPool
 
 	kcpNextUpdateWait int
 
@@ -26,6 +30,7 @@ type Tunneld struct {
 	kcpCheckCloseChan chan KcpCheckCloseEvent
 	// kcpReadyReadChan    chan KcpReadyReadEvent
 	// kcpOutputChan       chan KcpOutputEvent
+	kcpInputChan        chan ClientReadyReadEvent
 	serverReadyReadChan chan ServerReadyReadEvent
 	serverCloseChan     chan ServerCloseEvent
 	channelGCChan       chan ChannelGCEvent
@@ -37,6 +42,18 @@ func NewTunneld() *Tunneld {
 
 	t := makeTox("toxtund")
 	this.tox = t
+
+	this.mtox = newMinTox("toxtund")
+	bcc, err := ioutil.ReadFile("./toxtunc.txt")
+	debug.Println(err)
+	bcc = bytes.TrimSpace(bcc)
+	pubkey := mintox.CBDerivePubkey(mintox.NewCryptoKeyFromHex(string(bcc)))
+	this.mtox.addFriend(pubkey.ToHex())
+	log.Println("cli pubkey?", pubkey.ToHex())
+	this.usemtox = true
+
+	// callbacks
+	this.mtox.DataFunc = this.onMinToxData
 
 	// callbacks
 	t.CallbackSelfConnectionStatus(this.onToxnetSelfConnectionStatus, nil)
@@ -59,6 +76,7 @@ func (this *Tunneld) serve() {
 	this.kcpCheckCloseChan = make(chan KcpCheckCloseEvent, mpcsz)
 	// this.kcpReadyReadChan = make(chan KcpReadyReadEvent, 0)
 	// this.kcpOutputChan = make(chan KcpOutputEvent, 0)
+	this.kcpInputChan = make(chan ClientReadyReadEvent, mpcsz)
 	this.channelGCChan = make(chan ChannelGCEvent, mpcsz)
 	this.serverReadyReadChan = make(chan ServerReadyReadEvent, mpcsz)
 	this.serverCloseChan = make(chan ServerCloseEvent, mpcsz)
@@ -104,6 +122,8 @@ func (this *Tunneld) serve() {
 		//	this.processKcpReadyRead(evt.ch)
 		// case evt := <-this.kcpOutputChan:
 		//	this.processKcpOutput(evt.buf, evt.size, evt.extra)
+		case evt := <-this.kcpInputChan:
+			evt.ch.kcp.Input(evt.buf, true, true)
 		case evt := <-this.serverReadyReadChan:
 			this.processServerReadyRead(evt.ch, evt.buf, evt.size)
 		case evt := <-this.serverCloseChan:
@@ -210,9 +230,14 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 	ch := extra.(*Channel)
 
 	msg := string([]byte{254}) + string(buf[:size])
-	err := this.FriendSendLossyPacket(ch.toxid, msg)
-	// msg := string([]byte{191}) + string(buf[:size])
-	// err := this.tox.FriendSendLosslessPacket(0, msg)
+	var err error
+	if !this.usemtox {
+		err = this.FriendSendLossyPacket(ch.toxid, msg)
+		// msg := string([]byte{191}) + string(buf[:size])
+		// err := this.tox.FriendSendLosslessPacket(0, msg)
+	} else {
+		err = this.mtox.sendData(buf[:size], false)
+	}
 	if err != nil {
 		debug.Println(err)
 	} else {
@@ -280,9 +305,13 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	// info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 
 	repkt := ch.makeConnectACKPacket()
-	r, err := this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
+	if !this.usemtox {
+		_, err = this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
+	} else {
+		err = this.mtox.sendData(repkt.toJson(), true)
+	}
 	if err != nil {
-		debug.Println(err, r)
+		debug.Println(err)
 	}
 
 	appevt.Trigger("newconn")
@@ -291,6 +320,8 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	// can connect backend now，不能阻塞，开新的goroutine
 	this.pollServerReadyRead(ch)
 }
+
+var spdc2 = mintox.NewSpeedCalc()
 
 func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 	// TODO 使用内存池
@@ -311,6 +342,9 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 				// this.processServerReadyRead(ch, rbuf, n)
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n}
+				spdc2.Data(n)
+				log.Printf("--- poll srv data speed: %d, WaitSnd:%d, snd_wnd:%d\n",
+					spdc2.Avgspd, ch.kcp.WaitSnd(), ch.kcp.snd_wnd)
 				break
 			} else {
 				time.Sleep(3 * time.Millisecond)
@@ -423,6 +457,64 @@ func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 	}
 }
 
+func (this *Tunneld) onMinToxData(data []byte, cbdata mintox.Object) {
+	message := string(data)
+	friendId := this.mtox.friendpks
+	if data[0] == '{' && data[1] == '"' {
+		pkt := parsePacket(bytes.NewBufferString(message).Bytes())
+		if pkt == nil {
+			info.Println("maybe not command, just normal message", gopp.StrSuf(message, 52))
+		} else {
+			this.handleCtrlPacket(pkt, friendId)
+		}
+	} else {
+		this.handleDataPacket(data, 0)
+	}
+}
+func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
+	if pkt.Command == CMDCONNSYN {
+		log.Println(string(pkt.toJson()))
+		info.Printf("New conn on tunnel %s to %s:%s:%s\n", pkt.Tunname, pkt.Tunproto, pkt.Remoteip, pkt.Remoteport)
+		ch := NewChannelWithId(pkt.Chidcli, pkt.Tunname)
+		ch.tproto = pkt.Tunproto
+		ch.conv = this.makeKcpConv(friendId, pkt)
+		ch.ip = pkt.Remoteip
+		ch.port = pkt.Remoteport
+		ch.toxid = friendId
+		ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+		ch.kcp.SetMtu(tunmtu)
+		ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
+		ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
+
+		go this.connectToBackend(ch)
+
+	} else if pkt.Command == CMDCLOSEFIN {
+		if ch, ok := this.chpool.pool2[pkt.Conv]; ok {
+			info.Println("recv client close fin,", ch.chidcli, ch.chidsrv, ch.conv, pkt.Msgid)
+			ch.client_socket_close = true
+			this.promiseChannelClose(ch)
+		} else {
+			info.Println("recv client close fin, but maybe server already closed",
+				pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv, pkt.Msgid)
+		}
+	} else {
+		errl.Println("wtf, unknown cmmand:", pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
+	}
+}
+func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
+	// kcp包前4字段为conv，little hacky
+	conv := binary.LittleEndian.Uint32(buf)
+	ch := this.chpool.pool2[conv]
+	if ch == nil {
+		info.Println("channel not found, maybe has some problem, maybe closed", conv)
+	} else {
+		// n := ch.kcp.Input(buf, true, true)
+		this.kcpInputChan <- ClientReadyReadEvent{ch, buf, len(buf)}
+		n := len(buf)
+		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+	}
+}
+
 // a tool function
 func (this *Tunneld) makeKcpConv(friendId string, pkt *Packet) uint32 {
 	// crc32: toxid+host+port+time
@@ -439,34 +531,7 @@ func (this *Tunneld) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, mess
 	if pkt == nil {
 		info.Println("maybe not command, just normal message", gopp.StrSuf(message, 52))
 	} else {
-		if pkt.Command == CMDCONNSYN {
-			log.Println(message)
-			info.Printf("New conn on tunnel %s to %s:%s:%s\n", pkt.Tunname, pkt.Tunproto, pkt.Remoteip, pkt.Remoteport)
-			ch := NewChannelWithId(pkt.Chidcli, pkt.Tunname)
-			ch.tproto = pkt.Tunproto
-			ch.conv = this.makeKcpConv(friendId, pkt)
-			ch.ip = pkt.Remoteip
-			ch.port = pkt.Remoteport
-			ch.toxid = friendId
-			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
-			ch.kcp.SetMtu(tunmtu)
-			ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
-
-			go this.connectToBackend(ch)
-
-		} else if pkt.Command == CMDCLOSEFIN {
-			if ch, ok := this.chpool.pool2[pkt.Conv]; ok {
-				info.Println("recv client close fin,", ch.chidcli, ch.chidsrv, ch.conv, pkt.Msgid)
-				ch.client_socket_close = true
-				this.promiseChannelClose(ch)
-			} else {
-				info.Println("recv client close fin, but maybe server already closed",
-					pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv, pkt.Msgid)
-			}
-		} else {
-			errl.Println("wtf, unknown cmmand:", pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
-		}
-
+		this.handleCtrlPacket(pkt, friendId)
 	}
 }
 
@@ -474,16 +539,7 @@ func (this *Tunneld) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, 
 	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52), time.Now().String())
 	buf := bytes.NewBufferString(message).Bytes()
 	if buf[0] == 254 {
-		buf = buf[1:]
-		// kcp包前4字段为conv，little hacky
-		conv := binary.LittleEndian.Uint32(buf)
-		ch := this.chpool.pool2[conv]
-		if ch == nil {
-			info.Println("channel not found, maybe has some problem, maybe closed", conv)
-		} else {
-			n := ch.kcp.Input(buf, true, true)
-			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
-		}
+		this.handleDataPacket(buf[1:], friendNumber)
 	} else {
 		info.Println("unknown message:", buf[0])
 	}

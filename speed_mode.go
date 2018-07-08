@@ -32,8 +32,32 @@ const tox_interval = 200
 const kcp_interval = 75 // 50-100
 
 var SMTcp = &SpeedMode{name: "default-tcp", tox_interval: tox_interval, kcp_interval: kcp_interval,
-	nodelay: 0, interval: 100, resend: 0, nc: 0, wndsz: 32}
+	nodelay: 0, interval: 100, resend: 0, nc: 0, wndsz: 128}
 var SMDefault = SMTcp
+
+var SMTcp1 = &SpeedMode{name: "tcp1", tox_interval: tox_interval, kcp_interval: kcp_interval,
+	nodelay: 0, interval: 50, resend: 0, nc: 0, wndsz: 128}
+
+var SMTcp2 = &SpeedMode{name: "tcp2", tox_interval: tox_interval, kcp_interval: kcp_interval,
+	nodelay: 0, interval: 20, resend: 0, nc: 0, wndsz: 128}
+
+var SMTcp3 = &SpeedMode{name: "tcp3", tox_interval: tox_interval, kcp_interval: kcp_interval,
+	nodelay: 0, interval: 10, resend: 0, nc: 0, wndsz: 128}
+
+var SMTcp4 = &SpeedMode{name: "tcp4", tox_interval: tox_interval, kcp_interval: kcp_interval,
+	nodelay: 0, interval: 200, resend: 0, nc: 0, wndsz: 256}
+
+var SMTcp5 = &SpeedMode{name: "tcp5", tox_interval: tox_interval, kcp_interval: kcp_interval,
+	nodelay: 0, interval: 100, resend: 0, nc: 1, wndsz: 256}
+
+var SMTcp6 = &SpeedMode{name: "tcp6", tox_interval: tox_interval, kcp_interval: kcp_interval,
+	nodelay: 1, interval: 75, resend: 0, nc: 1, wndsz: 256}
+
+var SMTcp7 = &SpeedMode{name: "tcp7", tox_interval: tox_interval, kcp_interval: kcp_interval,
+	nodelay: 1, interval: 100, resend: 0, nc: 1, wndsz: 128}
+
+var SMTcp9 = &SpeedMode{name: "tcp9", tox_interval: tox_interval, kcp_interval: kcp_interval,
+	nodelay: 1, interval: kcp_interval * 2, resend: 0, nc: 1, wndsz: 386}
 
 var SMNormal = &SpeedMode{name: "normal", tox_interval: tox_interval, kcp_interval: kcp_interval,
 	nodelay: 0, interval: 50, resend: 0, nc: 0, wndsz: 32}
@@ -56,6 +80,22 @@ func set_speed_mode(mode string) {
 		fallthrough
 	case "default":
 		smuse = SMTcp
+	case "tcp1":
+		smuse = SMTcp1
+	case "tcp2":
+		smuse = SMTcp2
+	case "tcp3":
+		smuse = SMTcp3
+	case "tcp4":
+		smuse = SMTcp4
+	case "tcp5":
+		smuse = SMTcp5
+	case "tcp6":
+		smuse = SMTcp6
+	case "tcp7":
+		smuse = SMTcp7
+	case "tcp9":
+		smuse = SMTcp9
 	case "normal":
 		smuse = SMNormal
 	case "fast":

@@ -71,7 +71,7 @@ func parseRecordLine(line string) TunnelRecord {
 	}
 	rhost := segs[3]
 	rport, err := strconv.Atoi(segs[4])
-	rpubkey := segs[5]
+	rpubkey := strings.TrimSpace(segs[5])
 	if len(rpubkey) != 76 {
 	}
 
