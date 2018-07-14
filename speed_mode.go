@@ -57,7 +57,7 @@ var SMTcp7 = &SpeedMode{name: "tcp7", tox_interval: tox_interval, kcp_interval: 
 	nodelay: 1, interval: 100, resend: 0, nc: 1, wndsz: 128}
 
 var SMTcp9 = &SpeedMode{name: "tcp9", tox_interval: tox_interval, kcp_interval: kcp_interval,
-	nodelay: 1, interval: kcp_interval * 2, resend: 0, nc: 1, wndsz: 386}
+	nodelay: 1, interval: kcp_interval*2 + 50, resend: 0, nc: 1, wndsz: 512}
 
 var SMNormal = &SpeedMode{name: "normal", tox_interval: tox_interval, kcp_interval: kcp_interval,
 	nodelay: 0, interval: 50, resend: 0, nc: 0, wndsz: 32}

@@ -12,3 +12,12 @@ return 会执行 defer 的代码。
 
 os.Exit 不会执行 defer 的代码。
 
+### 不同线路中选择快速线路的几点考虑
+* 发送速度
+* 接收速度
+* ping响应时间
+
+* TCP Throughput Testing: https://tools.ietf.org/html/rfc6349
+* Softethervpn's Parallel Transmission Mechanism of Multiple Tunnels
+* transfer data between 2 systems as fast as possible over multiple TCP paths: https://github.com/facebook/wdt
+

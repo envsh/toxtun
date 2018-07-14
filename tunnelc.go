@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"mkuse/appcm"
 	"net"
 	// "strings"
 	"bytes"
@@ -426,6 +427,7 @@ func (this *Tunnelc) processClientReadyRead(ch *Channel, buf []byte, size int) {
 	sbuf := buf
 	pkt := ch.makeDataPacket(sbuf)
 	sn := ch.kcp.Send(pkt.toJson())
+	appcm.Meter("tunc.cli2kcp.len.total").Mark(int64(size))
 	debug.Println("cli->kcp:", sn, ch.conv)
 	appevt.Trigger("reqbytes", size, len(pkt.toJson())+25)
 }
@@ -438,6 +440,7 @@ func (this *Tunnelc) copyServer2Client(ch *Channel, pkt *Packet) {
 	if err != nil {
 		debug.Println(err)
 	} else {
+		appcm.Meter("tunc.kcp2cli.len.total").Mark(int64(wn))
 		debug.Println("kcp->cli:", wn)
 		appevt.Trigger("respbytes", wn, len(pkt.Data)+25)
 	}
@@ -506,14 +509,11 @@ func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 
 func (this *Tunnelc) onMinToxData(data []byte, cbdata mintox.Object) {
 	info.Println(len(data))
-	if data[0] == '{' && data[1] == '"' {
-		message := string(data)
-		pkt := parsePacket(bytes.NewBufferString(message).Bytes())
-		if pkt == nil {
-			info.Println("maybe not command, just normal message:", gopp.StrSuf(message, 52))
-		} else {
-			this.handleCtrlPacket(pkt, 0)
-		}
+
+	message := string(data)
+	pkt := parsePacket(bytes.NewBufferString(message).Bytes())
+	if pkt != nil {
+		this.handleCtrlPacket(pkt, 0)
 	} else {
 		this.handleDataPacket(data, 0)
 	}
@@ -571,7 +571,7 @@ func (this *Tunnelc) handleDataPacket(buf []byte, friendNumber uint32) {
 		errl.Println("wtf")
 	}
 	conv = binary.LittleEndian.Uint32(buf)
-	ch := this.chpool.pool2[conv]
+	ch := this.chpool.pool2[conv] // BUG: fatal error: concurrent map read and map write
 	if ch == nil {
 		info.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		// TODO 应该给服务器回个关闭包

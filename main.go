@@ -44,8 +44,9 @@ func main() {
 		inst_mode = argv[argc-1]
 	}
 
+	set_bootstrap_group()
 	set_speed_mode(kcp_mode)
-	info.Println("Using packet format:", pkt_use_fmt)
+	info.Printf("Using packet format: %s, Using bs group:%s\n", pkt_use_fmt, tox_bs_group)
 
 	go NewStatServer().serve()
 	appevt.Trigger("appmode", inst_mode)
