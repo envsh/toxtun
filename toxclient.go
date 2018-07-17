@@ -16,9 +16,9 @@ import (
 
 var cn_servers = []interface{}{
 	"119.23.239.31", uint16(33445), "7F613A23C9EA5AC200264EB727429F39931A86C39B67FC14D9ECA4EBE0D37F25", // CN HangZhou1
-	"39.108.221.234", uint16(33445), "0E81B1927B25EB7A4857C36FE5D6B938841676ECFEA5557D1CFB7DF4A946967F", // CN HangZhou2
 	"cotox.tk", uint16(33445), "AF66C5FFAA6CA67FB8E287A5B1D8581C15B446E12BF330963EF29E3AFB692918",
-	// "47.91.166.18", uint16(33556), "BEB842FDF490F9EF9F7453E8DABDFF3929AB33F4490287182E8DA6EDAC3CFA18", // CN HK xx
+	// "39.108.221.234", uint16(33445), "0E81B1927B25EB7A4857C36FE5D6B938841676ECFEA5557D1CFB7DF4A946967F", // CN HangZhou2
+	"47.91.166.18", uint16(33556), "BEB842FDF490F9EF9F7453E8DABDFF3929AB33F4490287182E8DA6EDAC3CFA18", // CN HK xx
 	// "10.0.0.7", uint16(33345), "2F0683A8AA6F29B2E043E5423073C7F89F662D3777FE85615963E97EF8AF2803",
 }
 var ru_servers = []interface{}{
@@ -58,6 +58,14 @@ func init() {
 	flag.StringVar(&tox_bs_group, "bs-group", tox_bs_group, "bootstrap group, us,ru,cn")
 }
 
+func is_selected_server(pubkey string) bool {
+	for j := 0; j < len(servers)/3; j++ {
+		if pubkey == servers[j*3+2].(string) {
+			return true
+		}
+	}
+	return false
+}
 func set_bootstrap_group() {
 	bsgroups := map[string]interface{}{"us": us_servers, "ru": ru_servers, "cn": cn_servers}
 	if bsgroupx, ok := bsgroups[tox_bs_group]; ok {

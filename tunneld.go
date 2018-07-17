@@ -457,12 +457,11 @@ func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 	}
 }
 
-func (this *Tunneld) onMinToxData(data []byte, cbdata mintox.Object) {
+func (this *Tunneld) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) {
 	message := string(data)
 	friendId := this.mtox.friendpks
-	// TODO 更好的查看是哪种包的方式
-	pkt := parsePacket(bytes.NewBufferString(message).Bytes())
-	if pkt != nil {
+	if ctrl {
+		pkt := parsePacket(bytes.NewBufferString(message).Bytes())
 		this.handleCtrlPacket(pkt, friendId)
 	} else {
 		this.handleDataPacket(data, 0)

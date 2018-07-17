@@ -507,12 +507,12 @@ func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 	}
 }
 
-func (this *Tunnelc) onMinToxData(data []byte, cbdata mintox.Object) {
+func (this *Tunnelc) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) {
 	info.Println(len(data))
 
-	message := string(data)
-	pkt := parsePacket(bytes.NewBufferString(message).Bytes())
-	if pkt != nil {
+	if ctrl {
+		message := string(data)
+		pkt := parsePacket(bytes.NewBufferString(message).Bytes())
 		this.handleCtrlPacket(pkt, 0)
 	} else {
 		this.handleDataPacket(data, 0)
