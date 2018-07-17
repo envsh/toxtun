@@ -123,7 +123,8 @@ func (this *Tunneld) serve() {
 		// case evt := <-this.kcpOutputChan:
 		//	this.processKcpOutput(evt.buf, evt.size, evt.extra)
 		case evt := <-this.kcpInputChan:
-			evt.ch.kcp.Input(evt.buf, true, true)
+			// evt.ch.kcp.Input(evt.buf, true, true)
+			this.processKcpInputChan(evt)
 		case evt := <-this.serverReadyReadChan:
 			this.processServerReadyRead(evt.ch, evt.buf, evt.size)
 		case evt := <-this.serverCloseChan:
@@ -148,7 +149,7 @@ func (this *Tunneld) serve() {
 ///////////
 // TODO 计算kcpNextUpdateWait的逻辑优化
 func kcp_poll(pool map[int32]*Channel) (chks []*Channel, nxtss []uint32) {
-	for _, ch := range pool {
+	for _, ch := range pool { // TODO fatal error: concurrent map iteration and map write
 		if ch.kcp == nil {
 			continue
 		}
@@ -277,7 +278,7 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 
 // should block
 func (this *Tunneld) connectToBackend(ch *Channel) {
-	this.chpool.putServer(ch)
+	//this.chpool.putServer(ch)
 
 	// Dial
 	var conn net.Conn
@@ -338,13 +339,13 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 
 		// 控制kcp.WaitSnd()的大小
 		for {
-			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
+			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*3 {
 				// this.processServerReadyRead(ch, rbuf, n)
 				sendbuf := gopp.BytesDup(rbuf[:n])
-				this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n}
+				this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n, false}
 				spdc2.Data(n)
-				log.Printf("--- poll srv data speed: %d, WaitSnd:%d, snd_wnd:%d\n",
-					spdc2.Avgspd, ch.kcp.WaitSnd(), ch.kcp.snd_wnd)
+				// log.Printf("--- poll srv data speed: %d, WaitSnd:%d, snd_wnd:%d\n",
+				// 	spdc2.Avgspd, ch.kcp.WaitSnd(), ch.kcp.snd_wnd)
 				break
 			} else {
 				time.Sleep(3 * time.Millisecond)
@@ -458,6 +459,10 @@ func (this *Tunneld) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 }
 
 func (this *Tunneld) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) {
+	this.kcpInputChan <- ClientReadyReadEvent{nil, data, len(data), ctrl}
+}
+func (this *Tunneld) processKcpInputChan(evt ClientReadyReadEvent) {
+	data, ctrl := evt.buf, evt.ctrl
 	message := string(data)
 	friendId := this.mtox.friendpks
 	if ctrl {
@@ -467,9 +472,21 @@ func (this *Tunneld) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) 
 		this.handleDataPacket(data, 0)
 	}
 }
+func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
+	// kcp包前4字段为conv，little hacky
+	conv := binary.LittleEndian.Uint32(buf)
+	ch := this.chpool.pool2[conv]
+	if ch == nil {
+		info.Println("channel not found, maybe has some problem, maybe closed", conv)
+	} else {
+		// n := ch.kcp.Input(buf, true, true)
+		ch.kcp.Input(buf, true, true)
+		n := len(buf)
+		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+	}
+}
 func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 	if pkt.Command == CMDCONNSYN {
-		log.Println(string(pkt.toJson()))
 		info.Printf("New conn on tunnel %s to %s:%s:%s\n", pkt.Tunname, pkt.Tunproto, pkt.Remoteip, pkt.Remoteport)
 		ch := NewChannelWithId(pkt.Chidcli, pkt.Tunname)
 		ch.tproto = pkt.Tunproto
@@ -482,6 +499,7 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 		ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
 		ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
 
+		this.chpool.putServer(ch)
 		go this.connectToBackend(ch)
 
 	} else if pkt.Command == CMDCLOSEFIN {
@@ -495,19 +513,6 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 		}
 	} else {
 		errl.Println("wtf, unknown cmmand:", pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
-	}
-}
-func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
-	// kcp包前4字段为conv，little hacky
-	conv := binary.LittleEndian.Uint32(buf)
-	ch := this.chpool.pool2[conv]
-	if ch == nil {
-		info.Println("channel not found, maybe has some problem, maybe closed", conv)
-	} else {
-		// n := ch.kcp.Input(buf, true, true)
-		this.kcpInputChan <- ClientReadyReadEvent{ch, buf, len(buf)}
-		n := len(buf)
-		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 	}
 }
 

@@ -96,6 +96,9 @@ func (this *MTox) daemonProc() {
 			if clinfo.status != 2 {
 				continue
 			}
+			if clinfo.inuse && int(time.Since(clinfo.spditm.LastUseTime).Seconds()) < 61 {
+				continue
+			}
 			this.sendBoundWidthData(binpk, clinfo)
 			// time.Sleep(2 * time.Second)
 			// break
@@ -149,16 +152,17 @@ func (this *MTox) sendRTTPong(binpk string, tcpcli *mintox.TCPClient, pingpkt []
 func (this *MTox) sendBBTResp(tcpcli *mintox.TCPClient, reqpkt []byte) {
 	pongpkt := gopp.NewBufferZero()
 	clinfo := this.clis[tcpcli.ServPubkey.BinStr()]
-	pongpkt.WriteByte(clinfo.connid)
+	// pongpkt.WriteByte(clinfo.connid)
 	pongpkt.Write(TCP_PACKET_BBTRESP)
 	pongpkt.Write(reqpkt[len(TCP_PACKET_RTTPING) : len(TCP_PACKET_RTTPING)+int(unsafe.Sizeof(uint64(0)))])
-	_, err := tcpcli.SendCtrlPacket(pongpkt.Bytes())
+	// _, err := tcpcli.SendCtrlPacket(pongpkt.Bytes())
+	_, err := tcpcli.SendDataPacket(clinfo.connid, pongpkt.Bytes())
 	if false {
 		gopp.ErrPrint(err)
 	}
 }
 
-func (this *MTox) handleBBTRequest(tcpcli *mintox.TCPClient, data []byte) {
+func (this *MTox) handleBBTResponse(tcpcli *mintox.TCPClient, data []byte) {
 	buf := gopp.NewBufferBuf(data[len(TCP_PACKET_BBTRESP):])
 	var bbtPktSeq uint64
 	binary.Read(buf, binary.BigEndian, &bbtPktSeq)
@@ -264,13 +268,23 @@ func (this *MTox) calcPriority() {
 		// return spditms[i].BottleneckBandwidth > spditms[j].BottleneckBandwidth
 	})
 
+	keys := []string{}
 	this.clismu.RLock()
 	for i, itm := range spditms {
 		log.Printf("%d, name: %s, BB: %d, RTT: %d/%d, weight: %d, wndsz: %d\n",
 			i, itm.Name, itm.BottleneckBandwidth, itm.RoundTripTime, int(itm.mtRTT.Rate5()), itm.Weight, itm.WriteWndSize)
+		if len(keys) < 3 {
+			keys = append(keys, itm.Key)
+			this.clis[itm.Key].inuse = true
+		} else {
+			this.clis[itm.Key].inuse = false
+		}
 		if i > 81 {
 			break
 		}
 	}
 	this.clismu.RUnlock()
+	this.clismu.Lock()
+	this.relays = keys
+	this.clismu.Unlock()
 }

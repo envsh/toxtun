@@ -368,7 +368,7 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				// this.processClientReadyRead(ch, rbuf, n)
-				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n}
+				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n, false}
 				break
 			} else {
 				time.Sleep(3 * time.Millisecond)
@@ -508,7 +508,7 @@ func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 }
 
 func (this *Tunnelc) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) {
-	info.Println(len(data))
+	debug.Println(len(data), ctrl)
 
 	if ctrl {
 		message := string(data)
@@ -581,7 +581,7 @@ func (this *Tunnelc) handleDataPacket(buf []byte, friendNumber uint32) {
 		newpkt := ch.makeCloseFINPacket()
 		this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
 	} else {
-		this.kcpInputChan <- ClientReadyReadEvent{ch, buf, len(buf)}
+		this.kcpInputChan <- ClientReadyReadEvent{ch, buf, len(buf), false}
 		// n := ch.kcp.Input(buf, true, true)
 		n := len(buf)
 		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))

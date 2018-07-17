@@ -43,6 +43,7 @@ type ClientReadyReadEvent struct {
 	ch   *Channel
 	buf  []byte
 	size int
+	ctrl bool
 }
 type ServerReadyReadEvent ClientReadyReadEvent
 
