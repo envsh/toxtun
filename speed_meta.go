@@ -162,6 +162,11 @@ func (this *MTox) sendBBTResp(tcpcli *mintox.TCPClient, reqpkt []byte) {
 	}
 }
 
+// The harmonic mean
+func calchmval(oldr float64, curr float64, n float64) float64 {
+	return (n + 1.0) / (n/oldr + 1.0/(curr*(n+1.0)))
+}
+
 func (this *MTox) handleBBTResponse(tcpcli *mintox.TCPClient, data []byte) {
 	buf := gopp.NewBufferBuf(data[len(TCP_PACKET_BBTRESP):])
 	var bbtPktSeq uint64
@@ -175,7 +180,8 @@ func (this *MTox) handleBBTResponse(tcpcli *mintox.TCPClient, data []byte) {
 		spditm.bbPktCnt--
 		if spditm.bbPktCnt == 0 {
 			spdval := float64(spditm.bbPktSize) / time.Since(spditm.bbPktTime).Seconds()
-			spditm.BottleneckBandwidth = int(spdval)
+			hmspdval := calchmval(float64(spditm.BottleneckBandwidth), spdval, float64(bbtPktSeq))
+			spditm.BottleneckBandwidth = int(hmspdval)
 			log.Println("recv bbt done:", bbtPktSeq, spditm.bbPktSize,
 				time.Since(spditm.bbPktTime), int(spdval), spditm.Name)
 			timen := int(time.Since(spditm.bbPktTime).Seconds())
@@ -285,6 +291,33 @@ func (this *MTox) calcPriority() {
 	}
 	this.clismu.RUnlock()
 	this.clismu.Lock()
+	oldkeys := this.relays
 	this.relays = keys
+	changed := !EqualNoOrder(oldkeys, keys)
 	this.clismu.Unlock()
+
+	// check change
+	log.Println("selected relays changed:", changed, sltchgcnt)
+	sltchgcnt++
+}
+
+var sltchgcnt int = 0
+
+func EqualNoOrder(s1, s2 []string) bool {
+	if len(s1) != len(s2) {
+		return false
+	}
+	for _, e1 := range s1 {
+		found := false
+		for _, e2 := range s2 {
+			if e2 == e1 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }

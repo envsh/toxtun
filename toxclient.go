@@ -49,13 +49,13 @@ var servers = []interface{}{}
 
 var tox_savedata_fname string
 var tox_disable_udp = false
-var tox_bs_group = "" // us,ru,cn
+var tox_bs_group = "" // us,ru,cn,auto
 
 func init() {
 	flag.BoolVar(&tox_disable_udp, "disable-udp", tox_disable_udp,
 		fmt.Sprintf("if tox disable udp, default: %v", tox_disable_udp))
 	flag.BoolVar(&useFixedBSs, "use-fixedbs", useFixedBSs, "use fixed bootstraps, possible faster.")
-	flag.StringVar(&tox_bs_group, "bs-group", tox_bs_group, "bootstrap group, us,ru,cn")
+	flag.StringVar(&tox_bs_group, "bs-group", tox_bs_group, "bootstrap group, us,ru,cn,auto")
 }
 
 func is_selected_server(pubkey string) bool {
@@ -67,7 +67,8 @@ func is_selected_server(pubkey string) bool {
 	return false
 }
 func set_bootstrap_group() {
-	bsgroups := map[string]interface{}{"us": us_servers, "ru": ru_servers, "cn": cn_servers}
+	tmpsrvs := append(append(append([]interface{}{}, cn_servers...), us_servers...), ru_servers...)
+	bsgroups := map[string]interface{}{"us": us_servers, "ru": ru_servers, "cn": cn_servers, "auto": tmpsrvs}
 	if bsgroupx, ok := bsgroups[tox_bs_group]; ok {
 		servers = bsgroupx.([]interface{})
 	} else {

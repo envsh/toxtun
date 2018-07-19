@@ -68,20 +68,32 @@ func newMinTox(name string) *MTox {
 	this.SelfPubkey, this.SelfSeckey = pubkey, seckey
 
 	this.setupTCPRelays()
-	go this.daemonProc()
+	if tox_bs_group == "auto" {
+		go this.daemonProc()
+	}
 	return this
 }
 
 func (this *MTox) setupTCPRelays() {
 	tmpsrvs := append(append(append([]interface{}{}, cn_servers...), us_servers...), ru_servers...)
 	// tmpsrvs = append(append([]interface{}{}, cn_servers...), us_servers...)
-	// tmpsrvs = servers
+	tmpsrvs = servers
 	for i := 0; i < len(tmpsrvs)/3; i++ {
 		r := i * 3
 		ipstr, port, pubkey := tmpsrvs[r+0].(string), tmpsrvs[r+1].(uint16), tmpsrvs[r+2].(string)
 		clinfo := this.connectRelay(fmt.Sprintf("%s:%d", ipstr, port), pubkey)
-		// clinfo.inuse = is_selected_server(pubkey)
+		if tox_bs_group != "auto" {
+		}
+		clinfo.inuse = is_selected_server(pubkey)
 		_ = clinfo
+	}
+	if tox_bs_group != "auto" {
+		tmpsrvs = servers
+		for i := 0; i < len(tmpsrvs)/3; i++ {
+			r := i * 3
+			_, _, pubkey := tmpsrvs[r+0].(string), tmpsrvs[r+1].(uint16), tmpsrvs[r+2].(string)
+			this.relays = append(this.relays, mintox.NewCryptoKeyFromHex(pubkey).BinStr())
+		}
 	}
 }
 
@@ -189,6 +201,7 @@ func (this *MTox) onRoutingData(object mintox.Object, number uint32, connid uint
 		this.clismu.Unlock()
 		// log.Println("rttpong:", time.Since(spditm.LastPingTime))
 		spditm.RoundTripTime = (spditm.RoundTripTime + int(time.Since(spditm.LastPingTime).Seconds()*1000)) / 2
+		spditm.RoundTripTime = spditm.RoundTripTime*2/10 + int(time.Since(spditm.LastPingTime).Seconds()*1000)*8/10
 		spditm.mtRTT.Mark(int64(spditm.RoundTripTime))
 	} else {
 		log.Panicln("wtf", connid, len(data), tcpcli.ServAddr, string(data[:7]))
@@ -299,15 +312,26 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 		appcm.Meter(fmt.Sprintf("mintoxc.sent.len.%s", srvip)).Mark(int64(len(data)))
 		clinfo.spditm.LastUseTime = time.Now()
 	}
-	// sentcntm1 := appcm.Meter(fmt.Sprintf("mintoxc.sent.cnt.%s", srvip))
+	sentcntm1 := appcm.Meter(fmt.Sprintf("mintoxc.sent.cnt.%s", srvip))
 	sentlenm1 := appcm.Meter(fmt.Sprintf("mintoxc.sent.len.%s", srvip))
 	sentcntname := fmt.Sprintf("mintoxc.sent.cnt.%s", srvip)
 	timc.Mark(sentcntname) // include failed
 	// rate: 1060 769.8741530645867 12.831235884409779 1307 15134 1060
-	// log.Println("rate:", sentcntm1.Count(), sentcntm1.Rate1()*60, sentcntm1.Rate1(), len(data), int(sentlenm1.Rate1()), timc.Count1(sentcntname), srvip)
+	/*
+		log.Printf("rate: %d, %.2f, %.2f, %d, %.2f, %d, %s\n",
+			sentcntm1.Count(), sentcntm1.Rate1()*60, sentcntm1.Rate1(),
+			len(data), sentlenm1.Rate1(), timc.Count1(sentcntname), srvip)
+	*/
 	if timc.Count1(sentcntname) > 300 && int(sentlenm1.Rate1()) > 500 { // 最近频繁使用，则认为速度可靠
 		// log.Println("save real use speed as test speed:", clinfo.spditm.BottleneckBandwidth, "=>", int(sentlenm1.Rate1()))
-		clinfo.spditm.BottleneckBandwidth = int(sentlenm1.Rate1())
+		// clinfo.spditm.BottleneckBandwidth = int(sentlenm1.Rate1())
+	}
+	if err == nil {
+		if int(sentlenm1.Rate1()) > 0 {
+			// log.Println(clinfo.spditm.BottleneckBandwidth, int(sentlenm1.Rate1()), sentcntm1.Count(), srvip)
+			hmspdval := calchmval(float64(clinfo.spditm.BottleneckBandwidth), sentlenm1.Rate1(), float64(sentcntm1.Count()))
+			clinfo.spditm.BottleneckBandwidth = int(hmspdval)
+		}
 	}
 	return tcpcli, spdc, err
 }

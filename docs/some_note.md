@@ -20,4 +20,7 @@ os.Exit 不会执行 defer 的代码。
 * TCP Throughput Testing: https://tools.ietf.org/html/rfc6349
 * Softethervpn's Parallel Transmission Mechanism of Multiple Tunnels
 * transfer data between 2 systems as fast as possible over multiple TCP paths: https://github.com/facebook/wdt
+* https://fishi.devtail.io/weblog/2015/04/12/measuring-bandwidth-and-round-trip-time-tcp-connection-inside-application-layer/
 
+自动选择线路功能实现大致完成，测试效果不太好，有些因素导致选择的线路切换频繁，速度反而提不上去。
+还需要考虑这种方式的优化的可能性与优化方法。

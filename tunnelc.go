@@ -524,7 +524,7 @@ func (this *Tunnelc) handleCtrlPacket(pkt *Packet, friendNumber uint32) {
 			ch.conv = pkt.Conv
 			ch.chidsrv = pkt.Chidsrv
 			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
-			ch.kcp.SetMtu(tunmtu)
+			ch.kcp.SetMtu(tunmtu) // TODO for tcp, little bigger
 			ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
 			ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
 			this.chpool.putClientLacks(ch)
