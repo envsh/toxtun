@@ -296,8 +296,8 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 
 	itemid := this.selectRelay()
 	if itemid == "" {
-		log.Println(lwarningp, errors.Errorf("no relay candidate: %s", len(this.clis)))
-		return nil, nil, errors.Errorf("no relay candidate: %s", len(this.clis))
+		log.Println(lwarningp, errors.Errorf("no relay candidate: %d", len(this.clis)))
+		return nil, nil, errors.Errorf("no relay candidate: %d", len(this.clis))
 	}
 	this.clismu.RLock()
 	clinfo := this.clis[itemid]
@@ -305,7 +305,7 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 	this.clismu.RUnlock()
 	if connid == 0 {
 		log.Println(lwarningp, "no connection", len(this.clis))
-		return nil, nil, errors.Errorf("no connection: %s", len(this.clis))
+		return nil, nil, errors.Errorf("no connection: %d", len(this.clis))
 	}
 	var tcpcli *mintox.TCPClient
 	var spdc *mintox.SpeedCalc

@@ -228,6 +228,7 @@ func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, 
 	tunrec := config.getRecordByName(tname)
 	ch.ip = tunrec.rhost
 	ch.port = fmt.Sprintf("%d", tunrec.rport)
+	ch.conv = makeKcpConv(this.tox.SelfGetPublicKey(), ch.ip, ch.port)
 	this.chpool.putClient(ch)
 
 	toxtunid := tunrec.rpubkey
@@ -256,12 +257,21 @@ func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, 
 		}
 		return
 	} else {
-		go func() {
-			time.Sleep(15 * time.Second)
+		// ch.conv = pkt.Conv
+		ch.chidsrv = pkt.Chidsrv
+		ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+		ch.kcp.SetMtu(tunmtu) // TODO for tcp, little bigger
+		ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
+		ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
+		this.chpool.putClientLacks(ch)
+		// can read now，不能阻塞，开新的goroutine
+		go this.pollClientReadyRead(ch)
+
+		time.AfterFunc(15*time.Second, func() {
 			if _, ok := this.chpool.pool[ch.chidcli]; ok {
 				this.clientCheckACKChan <- ClientCheckACKEvent{ch}
 			}
-		}()
+		})
 	}
 }
 
@@ -521,20 +531,20 @@ func (this *Tunnelc) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) 
 func (this *Tunnelc) handleCtrlPacket(pkt *Packet, friendNumber uint32) {
 	if pkt.Command == CMDCONNACK {
 		if ch, ok := this.chpool.pool[pkt.Chidcli]; ok {
-			ch.conv = pkt.Conv
-			ch.chidsrv = pkt.Chidsrv
-			ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
-			ch.kcp.SetMtu(tunmtu) // TODO for tcp, little bigger
-			ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
-			ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
-			this.chpool.putClientLacks(ch)
+			// ch.conv = pkt.Conv
+			// ch.chidsrv = pkt.Chidsrv
+			// ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+			// ch.kcp.SetMtu(tunmtu) // TODO for tcp, little bigger
+			// ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
+			// ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
+			// this.chpool.putClientLacks(ch)
 
 			info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.Data)
 			appevt.Trigger("connok")
 			appevt.Trigger("connact", 1)
 			ch.conn_ack_recved = true
 			// can read now，不能阻塞，开新的goroutine
-			go this.pollClientReadyRead(ch)
+			// go this.pollClientReadyRead(ch)
 		} else {
 			info.Println("maybe conn ack response timeout", pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
 			// TODO 应该给服务器回个关闭包

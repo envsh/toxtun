@@ -193,14 +193,16 @@ func (this *Channel) dumpInfo() []interface{} {
 
 ///////////
 type ChannelPool struct {
-	pool  map[int32]*Channel
-	pool2 map[uint32]*Channel
+	pool   map[int32]*Channel
+	pool2  map[uint32]*Channel
+	rcvbuf map[uint32][]*ClientReadyReadEvent
 }
 
 func NewChannelPool() *ChannelPool {
 	p := new(ChannelPool)
 	p.pool = make(map[int32]*Channel, 0)
 	p.pool2 = make(map[uint32]*Channel, 0)
+	p.rcvbuf = make(map[uint32][]*ClientReadyReadEvent)
 
 	return p
 }

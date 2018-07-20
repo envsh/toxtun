@@ -249,7 +249,7 @@ func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
 func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	if ch.conn == nil {
 		errl.Println("Not Connected:", ch.chidsrv, ch.chidcli, ch.tname)
-		// return
+		return
 	}
 
 	buf := make([]byte, ch.kcp.PeekSize())
@@ -263,6 +263,9 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	if pkt.isconnack() {
 	} else if pkt.isdata() {
 		ch := this.chpool.pool[pkt.Chidsrv]
+		if ch == nil {
+			ch = this.chpool.pool2[pkt.Conv] // for quick handshake mode
+		}
 		debug.Println("processing channel data:", ch.chidsrv, len(pkt.Data), gopp.StrSuf(string(pkt.Data), 52))
 
 		buf := pkt.Data
@@ -319,6 +322,13 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	appevt.Trigger("connok")
 	appevt.Trigger("connact", 1)
 	// can connect backend now，不能阻塞，开新的goroutine
+	if rcvs, ok := this.chpool.rcvbuf[ch.conv]; ok && len(rcvs) > 0 {
+		delete(this.chpool.rcvbuf, ch.conv)
+		log.Println("channel has quick head data:", ch.conv, len(rcvs))
+		for i := 0; i < len(rcvs); i++ {
+			this.kcpInputChan <- *rcvs[i]
+		}
+	}
 	this.pollServerReadyRead(ch)
 }
 
@@ -394,7 +404,10 @@ func (this *Tunneld) promiseChannelClose(ch *Channel) {
 		ch.addCloseReason("client_close")
 		info.Println("force close...", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		ch.server_socket_close = true // ch.conn真正关闭可能有延时，造成此处重复处理。提前设置关闭标识。
-		ch.conn.Close()
+		if ch.conn != nil {
+			ch.conn.Close()
+			ch.conn = nil
+		}
 		appevt.Trigger("closereason", ch.closeReason())
 	} else if ch.server_socket_close == true && ch.client_socket_close == true {
 		ch.addCloseReason("both_close")
@@ -477,20 +490,31 @@ func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
 	conv := binary.LittleEndian.Uint32(buf)
 	ch := this.chpool.pool2[conv]
 	if ch == nil {
-		info.Println("channel not found, maybe has some problem, maybe closed", conv)
+		// try get sequence no
+		sego := kcp_parse_segment(buf)
+		info.Println("channel not found, maybe has some problem, maybe closed", conv, sego.sn, sego.ts)
+		if sego.sn == 0 {
+			evt := &ClientReadyReadEvent{nil, buf, len(buf), false}
+			this.chpool.rcvbuf[conv] = append(this.chpool.rcvbuf[conv], evt)
+		}
 	} else {
 		// n := ch.kcp.Input(buf, true, true)
-		ch.kcp.Input(buf, true, true)
-		n := len(buf)
-		debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+		in := ch.kcp.Input(buf, true, true)
+		if in < 0 {
+			errl.Println("kcp input err:", in, conv, len(buf))
+		} else {
+			n := len(buf)
+			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+		}
 	}
 }
 func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 	if pkt.Command == CMDCONNSYN {
-		info.Printf("New conn on tunnel %s to %s:%s:%s\n", pkt.Tunname, pkt.Tunproto, pkt.Remoteip, pkt.Remoteport)
+		info.Printf("New conn on tunnel %s to %s:%s:%s, conv: %d\n", pkt.Tunname, pkt.Tunproto, pkt.Remoteip, pkt.Remoteport, pkt.Conv)
 		ch := NewChannelWithId(pkt.Chidcli, pkt.Tunname)
 		ch.tproto = pkt.Tunproto
-		ch.conv = this.makeKcpConv(friendId, pkt)
+		ch.conv = this.makeKcpConv(friendId, pkt) // depcreated for quick handshake mode
+		ch.conv = pkt.Conv
 		ch.ip = pkt.Remoteip
 		ch.port = pkt.Remoteport
 		ch.toxid = friendId
