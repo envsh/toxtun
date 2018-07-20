@@ -15,7 +15,9 @@ os.Exit 不会执行 defer 的代码。
 ### 不同线路中选择快速线路的几点考虑
 * 发送速度
 * 接收速度
-* ping响应时间
+* ping响应时间 RTT
+* loss rates
+* 实时数据的ACK
 
 * TCP Throughput Testing: https://tools.ietf.org/html/rfc6349
 * Softethervpn's Parallel Transmission Mechanism of Multiple Tunnels
@@ -24,3 +26,7 @@ os.Exit 不会执行 defer 的代码。
 
 自动选择线路功能实现大致完成，测试效果不太好，有些因素导致选择的线路切换频繁，速度反而提不上去。
 还需要考虑这种方式的优化的可能性与优化方法。
+这个问题归为MPTCP schedule范畴。https://tools.ietf.org/html/rfc6356
+
+### 优化1：在kcp握手的阶段，数据一同发送到服务器端。 (首次连接的RTT)
+

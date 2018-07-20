@@ -247,29 +247,46 @@ func (this *MTox) sendData(data []byte, ctrl bool) error {
 	var err error
 	var spdc *mintox.SpeedCalc
 	var tcpcli *mintox.TCPClient
-	btime := time.Now()
 	data = append(gopp.IfElse(ctrl, TCP_PACKET_TUNCTRL, TCP_PACKET_TUNDATA).([]byte), data...)
-	if ctrl {
-		tcpcli, spdc, err = this.sendDataImpl(data)
-	} else {
-		for i := 0; i < 1; i++ {
+	rlycnt := len(this.relays)
+	if rlycnt == 0 {
+		this.calcPriority()
+		rlycnt = len(this.relays)
+	}
+	for tryi := 0; tryi < rlycnt; tryi++ {
+		btime := time.Now()
+		if ctrl {
 			tcpcli, spdc, err = this.sendDataImpl(data)
-		}
-	}
-	dtime := time.Since(btime)
-	if dtime > 1*time.Millisecond {
-		errl.Println(err, len(data), dtime)
-	}
-	appcm.Meter("mintoxc.sent.cnt.total").Mark(1)
-	appcm.Meter("mintoxc.sent.len.total").Mark(int64(len(data)))
-	this.spdca.Data(len(data))
-	if int(time.Since(last_show_sent_speed).Seconds()) > 3 {
-		last_show_sent_speed = time.Now()
-		if spdc != nil {
-			log.Printf("--- sent speed: %d/%d, len: %d/%d, %s\n",
-				this.spdca.Avgspd, spdc.Avgspd, spdc.Totlen, len(data), tcpcli.ServAddr)
 		} else {
-			log.Printf("--- sent speed: %d, len: %d\n", this.spdca.Avgspd, len(data))
+			for i := 0; i < 1; i++ {
+				tcpcli, spdc, err = this.sendDataImpl(data)
+			}
+		}
+		dtime := time.Since(btime)
+		if dtime > 1*time.Millisecond {
+			errl.Println(err, len(data), dtime)
+		}
+		if err == nil {
+			appcm.Meter("mintoxc.sent.cnt.total").Mark(1)
+			appcm.Meter("mintoxc.sent.len.total").Mark(int64(len(data)))
+			this.spdca.Data(len(data))
+			if int(time.Since(last_show_sent_speed).Seconds()) > 3 {
+				last_show_sent_speed = time.Now()
+				if spdc != nil {
+					log.Printf("--- sent speed: %d/%d, len: %d/%d, %s\n",
+						this.spdca.Avgspd, spdc.Avgspd, spdc.Totlen, len(data), tcpcli.ServAddr)
+				} else {
+					log.Printf("--- sent speed: %d, len: %d\n", this.spdca.Avgspd, len(data))
+				}
+			}
+		}
+		if err == nil {
+			break
+		}
+		if err != nil && strings.Contains(err.Error(), "queue is full") {
+			continue // retry next transport
+		} else /*err != nil */ {
+			break // don't care other error
 		}
 	}
 	return err
