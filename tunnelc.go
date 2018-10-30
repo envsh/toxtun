@@ -311,6 +311,15 @@ func (this *Tunnelc) serveKcp() {
 			default:
 				errl.Println("unknown recv:", n, ch.chidcli, ch.conv)
 			}
+			if n != -3 { // check read timeout for client
+				// 一般浏览器超时时间120s
+				dtime := int(time.Since(ch.last_net_recv).Seconds())
+				if dtime > 120 && ch.last_net_recv.Nanosecond() > ch.conn_begin_time.Nanosecond() {
+					info.Println("read timeout from kcp(remnet)", dtime, ch.conv, ch.conn_begin_time)
+					ch.addCloseReason("read timeout from kcp(remnet)")
+					ch.conn.Close()
+				}
+			}
 		}
 	}
 }
@@ -326,6 +335,7 @@ func (this *Tunnelc) processKcpReadyRead(ch *Channel) {
 	if pkt.isdata() {
 		ch := this.chpool.pool[pkt.Chidcli]
 		this.copyServer2Client(ch, pkt)
+		ch.last_net_recv = time.Now()
 	} else {
 		panic(123)
 	}
@@ -375,7 +385,7 @@ func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 
 		// 应用层控制kcp.WaitSnd()的大小
 		for {
-			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*5 {
+			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*3 {
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				// this.processClientReadyRead(ch, rbuf, n)
 				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n, false}

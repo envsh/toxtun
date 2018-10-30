@@ -83,6 +83,8 @@ type Channel struct {
 	close_reasons []string
 	close_stacks  [][]uintptr
 	rmctimes      int
+
+	last_net_recv time.Time // for client to check recv net data
 }
 
 func NewChannelClient(conn net.Conn, tname string) *Channel {
@@ -93,6 +95,7 @@ func NewChannelClient(conn net.Conn, tname string) *Channel {
 	ch.conn_begin_time = time.Now()
 	ch.close_reasons = make([]string, 0)
 	ch.close_stacks = make([][]uintptr, 0)
+	ch.last_net_recv = ch.conn_begin_time
 
 	if config != nil {
 		tunrec := config.getRecordByName(tname)

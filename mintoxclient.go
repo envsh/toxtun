@@ -112,8 +112,10 @@ func (this *MTox) connectRelay(ipaddr, pubkey string) *ClientInfo {
 	tcpcli.RoutingDataFunc = this.onRoutingData
 	tcpcli.RoutingDataCbdata = tcpcli
 	tcpcli.OnConfirmed = func() {
+		log.Println(ldebugp, "adding friendpk", this.friendpks[:20], ipaddr)
 		if this.friendpks != "" {
-			tcpcli.ConnectPeer(this.friendpks)
+			err := tcpcli.ConnectPeer(this.friendpks)
+			gopp.ErrPrint(err, lerrorp)
 		}
 	}
 	tcpcli.OnClosed = this.onTCPClientClosed
@@ -132,7 +134,7 @@ func (this *MTox) onTCPClientClosed(tcpcli *mintox.TCPClient) {
 	ipaddr := tcpcli.ServAddr
 	pubkey := tcpcli.ServPubkey.ToHex()
 	pubkeyb := tcpcli.ServPubkey.BinStr()
-	log.Println("tcp client closed, cleanup...", ipaddr, pubkey[:20])
+	log.Println(lerrorp, "tcp client closed, cleanup...", ipaddr, pubkey[:20])
 	this.clismu.Lock()
 	tcpcli.RoutingResponseFunc = nil
 	tcpcli.RoutingResponseCbdata = nil
@@ -150,7 +152,7 @@ func (this *MTox) onTCPClientClosed(tcpcli *mintox.TCPClient) {
 		delete(this.clis, pubkeyb)
 	}
 	this.clismu.Unlock()
-	log.Println("Reconnect after 5 seconds.", ipaddr, pubkey[:20])
+	log.Println(lerrorp, "Reconnect after 5 seconds.", ipaddr, pubkey[:20])
 	appcm.Counter(fmt.Sprintf("mintoxc.recontcpc.%s", strings.Split(ipaddr, ":")[0])).Inc(1)
 	time.AfterFunc(5*time.Second, func() { this.connectRelay(ipaddr, pubkey) })
 }
@@ -158,16 +160,18 @@ func (this *MTox) onTCPClientClosed(tcpcli *mintox.TCPClient) {
 // pubkey: to connect friend's
 func (this *MTox) onRoutingResponse(object mintox.Object, connid uint8, pubkey *mintox.CryptoKey) {
 	tcpcli := object.(*mintox.TCPClient)
-	log.Println(ldebugp, connid, tcpcli.ServAddr, pubkey.ToHex()[:20])
+	log.Println(ldebugp, "routing new connid:", connid, tcpcli.ServAddr, pubkey.ToHex()[:20])
 	this.clismu.Lock()
 	defer this.clismu.Unlock()
 	this.clis[tcpcli.ServPubkey.BinStr()].connid = connid
+	this.clis[tcpcli.ServPubkey.BinStr()].status = 0 // 尚未建立连接
 }
 
 func (this *MTox) onRoutingStatus(object mintox.Object, number uint32, connid uint8, status uint8) {
 	tcpcli := object.(*mintox.TCPClient)
-	if false {
-		log.Println(ldebugp, connid, status, tcpcli.ServAddr)
+	// if status > 0才是真正和建立了连接
+	if true {
+		log.Println(ldebugp, "routing status connid:", connid, status, tcpcli.ServAddr)
 	}
 	this.clismu.Lock()
 	defer this.clismu.Unlock()
@@ -235,7 +239,8 @@ func (this *MTox) addFriend(friendpk string) {
 	this.clismu.RLock()
 	defer this.clismu.RUnlock()
 	for _, clinfo := range this.clis {
-		clinfo.tcpcli.ConnectPeer(friendpk)
+		err := clinfo.tcpcli.ConnectPeer(friendpk)
+		gopp.ErrPrint(err, lerrorp)
 	}
 }
 
@@ -296,16 +301,22 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 
 	itemid := this.selectRelay()
 	if itemid == "" {
-		log.Println(lwarningp, errors.Errorf("no relay candidate: %d", len(this.clis)))
-		return nil, nil, errors.Errorf("no relay candidate: %d", len(this.clis))
+		err := errors.Errorf("no peer connected relay candidate: %d", len(this.clis))
+		log.Println(lwarningp, err)
+		return nil, nil, err
 	}
 	this.clismu.RLock()
-	clinfo := this.clis[itemid]
-	connid = clinfo.connid
+	clinfo, ok0 := this.clis[itemid]
 	this.clismu.RUnlock()
+	if !ok0 {
+		log.Println(lwarningp, errors.Errorf("cli not found"))
+		return nil, nil, errors.Errorf("cli not found")
+	}
+	connid = clinfo.connid
 	if connid == 0 {
-		log.Println(lwarningp, "no connection", len(this.clis))
-		return nil, nil, errors.Errorf("no connection: %d", len(this.clis))
+		err := errors.Errorf("Invalid peer routing id: %d, servers: %d", connid, len(this.clis))
+		log.Println(lwarningp, err)
+		return nil, nil, err
 	}
 	var tcpcli *mintox.TCPClient
 	var spdc *mintox.SpeedCalc
