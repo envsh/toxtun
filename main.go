@@ -14,9 +14,9 @@ const (
 
 var (
 	// options
-	inst_mode   string // = "server" | "client"
-	kcp_mode    string // = "default" // fast
-	config_file string // = "toxtun_whtun.ini"
+	inst_mode   string             // = "server" | "client"
+	kcp_mode    string = "default" // = "default" // fast
+	config_file string             // = "toxtun_whtun.ini"
 	config      *TunnelConfig
 )
 
@@ -25,6 +25,8 @@ func init() {
 	if !(kcp_mode == "default" || kcp_mode == "fast") {
 		kcp_mode = "fast"
 	}
+	flag.IntVar(&smuse.interval, "interval", smuse.interval, "kcp check interval")
+	flag.IntVar(&smuse.kcp_interval, "kcp-interval", smuse.kcp_interval, "kcp update interval")
 
 	flag.StringVar(&config_file, "config", "", "config file .ini")
 
@@ -44,8 +46,8 @@ func main() {
 		inst_mode = argv[argc-1]
 	}
 
-	set_bootstrap_group()
-	set_speed_mode(kcp_mode)
+	set_bootstrap_group(inst_mode)
+	// set_speed_mode(kcp_mode)
 	info.Printf("Using packet format: %s, Using bs group:%s\n", pkt_use_fmt, tox_bs_group)
 
 	go NewStatServer().serve()

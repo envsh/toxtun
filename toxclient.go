@@ -25,6 +25,7 @@ var cn_servers = []interface{}{
 }
 var ru_servers = []interface{}{
 	// RU good at midnight
+	// no tcp
 	// "92.54.84.70", uint16(33445), "5625A62618CB4FCA70E147A71B29695F38CC65FF0CBD68AD46254585BE564802",
 	"85.172.30.117", uint16(33445), "8E7D0B859922EF569298B4D261A8CCB5FEA14FB91ED412A7603A585A25698832",
 	// "80.87.193.193", uint16(33445), "B38255EE4B054924F6D79A5E6E5889EC94B6ADF6FE9906F97A3D01E3D083223A",
@@ -33,12 +34,16 @@ var ru_servers = []interface{}{
 	// "79.140.30.52", uint16(33445), "FFAC871E85B1E1487F87AE7C76726AE0E60318A85F6A1669E04C47EB8DC7C72D",
 	"195.91.228.210", uint16(33445), "7467AFA626D3246343170B309BA5BDC975DF3924FC9D7A5917FBFA9F5CD5CD38",
 	"95.31.18.227", uint16(33445), "257744DBF57BE3E117FE05D145B5F806089428D4DCE4E3D0D50616AA16D9417E",
+	"t0x-node1.weba.ru", uint16(33445), "5A59705F86B9FC0671FDF72ED9BB5E55015FF20B349985543DDD4B0656CA1C63",
+	// 300+ms
+	// "tox-node.loskiq.it", uint16(33445), "88124F3C18C6CFA8778B7679B7329A333616BD27A4DFB562D476681315CF143D",
 	// "62.173.139.200", uint16(33445), "4E608965D9BDA877B47ABAF046E58C9C22EE87A07C6B023104F963A1513C3B08", // x
 }
 var us_servers = []interface{}{
 	// US west
 	"node.tox.biribiri.org", uint16(33445), "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67", // 67.215.253.85
 	"104.217.252.207", uint16(33445), "C1520BCFCA158ED487861E992D6A4F6025C0F5F170DF958849B44AD28591E476",
+	"52.53.185.100", uint16(33445), "A04F5FE1D006871588C8EC163676458C1EC75B20B4A147433D271E1E85DAF839",
 
 	// US east
 	// "104.223.122.15", uint16(33445), "0FB96EEBFB1650DDB52E70CF773DDFCABE25A95CC3BB50FC251082E4B63EF82A",
@@ -69,13 +74,24 @@ func is_selected_server(pubkey string) bool {
 	}
 	return false
 }
-func set_bootstrap_group() {
+
+// mode: client|server
+func set_bootstrap_group(mode string) {
 	tmpsrvs := append(append(append([]interface{}{}, cn_servers...), us_servers...), ru_servers...)
 	bsgroups := map[string]interface{}{"us": us_servers, "ru": ru_servers, "cn": cn_servers, "auto": tmpsrvs}
-	if bsgroupx, ok := bsgroups[tox_bs_group]; ok {
-		servers = bsgroupx.([]interface{})
-	} else {
-		log.Fatalln("unknown bs group:", tox_bs_group)
+	switch mode {
+	case "client":
+		if bsgroupx, ok := bsgroups[tox_bs_group]; ok {
+			servers = bsgroupx.([]interface{})[:9]
+			// servers = []interface{}{"91.234.60.90", uint16(33445), "EEDE4F1ADB8C2D3A7DFF9A9C23BF7E3AB0FEFF6C98A0C3879FBD5059FE1ABE14"}
+			log.Println(len(servers), servers)
+		} else {
+			log.Fatalln("unknown bs group:", tox_bs_group)
+		}
+	case "server": // server连接全部，由客户端选择连接哪些节点
+		servers = tmpsrvs
+	default:
+		log.Fatalln("not supported mode:", mode)
 	}
 }
 

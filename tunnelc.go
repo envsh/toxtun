@@ -5,6 +5,7 @@ import (
 	"log"
 	"mkuse/appcm"
 	"net"
+
 	// "strings"
 	"bytes"
 	"encoding/binary"
@@ -599,7 +600,13 @@ func (this *Tunnelc) handleDataPacket(buf []byte, friendNumber uint32) {
 		pkt := NewBrokenPacket(conv)
 		ch := NewChannelFromPacket(pkt)
 		newpkt := ch.makeCloseFINPacket()
-		this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
+		if !this.usemtox {
+			_, err := this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
+			gopp.ErrPrint(err)
+		} else {
+			err := this.mtox.sendData(newpkt.toJson(), true)
+			gopp.ErrPrint(err)
+		}
 	} else {
 		this.kcpInputChan <- ClientReadyReadEvent{ch, buf, len(buf), false}
 		// n := ch.kcp.Input(buf, true, true)

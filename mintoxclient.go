@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	metrics "github.com/rcrowley/go-metrics"
 	"github.com/sasha-s/go-deadlock"
+	funk "github.com/thoas/go-funk"
 
 	"mkuse/appcm"
 )
@@ -37,9 +38,10 @@ type MTox struct {
 	friendpko *mintox.CryptoKey
 	mtreg     metrics.Registry
 
-	spdca  *mintox.SpeedCalc // total
-	picker *rrPick
-	relays []string // binstr of client pubkey
+	spdca    *mintox.SpeedCalc // total
+	picker   *rrPick
+	relays   []string // binstr of client pubkey
+	relaysmu deadlock.RWMutex
 
 	DataFunc   func(data []byte, cbdata mintox.Object, ctrl bool)
 	DataCbdata mintox.Object
@@ -92,7 +94,9 @@ func (this *MTox) setupTCPRelays() {
 		for i := 0; i < len(tmpsrvs)/3; i++ {
 			r := i * 3
 			_, _, pubkey := tmpsrvs[r+0].(string), tmpsrvs[r+1].(uint16), tmpsrvs[r+2].(string)
-			this.relays = append(this.relays, mintox.NewCryptoKeyFromHex(pubkey).BinStr())
+			_ = pubkey
+			// this.relays = append(this.relays, mintox.NewCryptoKeyFromHex(pubkey).BinStr())
+			// this.addRelay(mintox.NewCryptoKeyFromHex(pubkey).BinStr())
 		}
 	}
 }
@@ -135,6 +139,8 @@ func (this *MTox) onTCPClientClosed(tcpcli *mintox.TCPClient) {
 	pubkey := tcpcli.ServPubkey.ToHex()
 	pubkeyb := tcpcli.ServPubkey.BinStr()
 	log.Println(lerrorp, "tcp client closed, cleanup...", ipaddr, pubkey[:20])
+	this.removeRelay(pubkeyb)
+
 	this.clismu.Lock()
 	tcpcli.RoutingResponseFunc = nil
 	tcpcli.RoutingResponseCbdata = nil
@@ -178,6 +184,7 @@ func (this *MTox) onRoutingStatus(object mintox.Object, number uint32, connid ui
 	this.clis[tcpcli.ServPubkey.BinStr()].status = status
 	this.clis[tcpcli.ServPubkey.BinStr()].connid = connid
 	if status == 2 {
+		this.addRelay(tcpcli.ServPubkey.BinStr())
 		this.sendRTTPing(tcpcli.ServPubkey.BinStr(), this.clis[tcpcli.ServPubkey.BinStr()])
 	} else if status < 2 {
 		// delete(this.conns[tcpcli.ServPubkey.BinStr()], connid)
@@ -258,6 +265,8 @@ func (this *MTox) sendData(data []byte, ctrl bool) error {
 		this.calcPriority()
 		rlycnt = len(this.relays)
 	}
+	rlycnt = gopp.IfElseInt(rlycnt > 2, 2, rlycnt)
+	rlycnt = 1
 	for tryi := 0; tryi < rlycnt; tryi++ {
 		btime := time.Now()
 		if ctrl {
@@ -267,6 +276,7 @@ func (this *MTox) sendData(data []byte, ctrl bool) error {
 				tcpcli, spdc, err = this.sendDataImpl(data)
 			}
 		}
+		gopp.ErrPrint(err)
 		dtime := time.Since(btime)
 		if dtime > 1*time.Millisecond {
 			errl.Println(err, len(data), dtime)
@@ -275,7 +285,7 @@ func (this *MTox) sendData(data []byte, ctrl bool) error {
 			appcm.Meter("mintoxc.sent.cnt.total").Mark(1)
 			appcm.Meter("mintoxc.sent.len.total").Mark(int64(len(data)))
 			this.spdca.Data(len(data))
-			if int(time.Since(last_show_sent_speed).Seconds()) > 3 {
+			if false && int(time.Since(last_show_sent_speed).Seconds()) > 3 {
 				last_show_sent_speed = time.Now()
 				if spdc != nil {
 					log.Printf("--- sent speed: %d/%d, len: %d/%d, %s\n",
@@ -296,6 +306,9 @@ func (this *MTox) sendData(data []byte, ctrl bool) error {
 	}
 	return err
 }
+
+var sendto = ""
+
 func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCalc, error) {
 	var connid uint8
 
@@ -328,7 +341,12 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 		log.Println(lwarningp, "not found tcpcli:", connid, len(this.clis))
 		return nil, nil, errors.Errorf("not found tcpcli: %d, %d", connid, len(this.clis))
 	}
+	if sendto != tcpcli.ServAddr {
+		// log.Println("switch relay", sendto, tcpcli.ServAddr)
+		// sendto = tcpcli.ServAddr
+	}
 	_, err := tcpcli.SendDataPacket(connid, data)
+	gopp.ErrPrint(err)
 	if err != nil {
 		// return tcpcli, spdc, err
 	}
@@ -370,7 +388,7 @@ func (this *MTox) selectRelay() string {
 		this.calcPriority()
 	}
 	if len(this.relays) < 3 {
-		log.Println("not enough candidate relays:", this.relays)
+		// log.Println("not enough candidate relays:", this.relays)
 	}
 
 	this.clismu.RLock()
@@ -387,6 +405,26 @@ func (this *MTox) selectRelay() string {
 	return itemid
 }
 
+func (this *MTox) addRelay(key string) {
+	this.relaysmu.Lock()
+	defer this.relaysmu.Unlock()
+	if !funk.Contains(this.relays, key) {
+		this.relays = append(this.relays, key)
+	}
+}
+func (this *MTox) removeRelay(key string) {
+	this.relaysmu.Lock()
+	defer this.relaysmu.Unlock()
+	newv := []string{}
+	for _, k := range this.relays {
+		if k == key {
+		} else {
+			newv = append(newv, k)
+		}
+	}
+	this.relays = newv
+}
+
 type rrPick struct {
 	next int
 }
@@ -395,6 +433,7 @@ func (this *rrPick) SelectOne(items []string, chkfn func(item string) bool) stri
 	if len(items) == 0 {
 		return ""
 	}
+	// this.next = 0
 
 	for i := 0; i < len(items); i++ {
 		if this.next >= len(items) {
@@ -411,5 +450,6 @@ func (this *rrPick) SelectOne(items []string, chkfn func(item string) bool) stri
 			return item
 		}
 	}
+
 	return ""
 }
