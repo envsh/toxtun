@@ -125,7 +125,7 @@ func (this *MTox) sendRTTPing(binpk string, clinfo *ClientInfo) {
 	ping_plain.Write(TCP_PACKET_RTTPING)
 	pingid := rand.Uint64()
 	pingid = gopp.IfElse(pingid == 0, uint64(1), pingid).(uint64)
-	tcpcli.Pingid = pingid
+
 	clinfo.spditm.LastPingTime = time.Now()
 	binary.Write(ping_plain, binary.BigEndian, pingid)
 	log.Println("rtt ping plnpkt len:", ping_plain.Len(), pingid)

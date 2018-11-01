@@ -244,12 +244,12 @@ func (this *ChannelPool) rmClient(ch *Channel) {
 	haserr := false
 
 	if _, ok := this.pool[ch.chidcli]; !ok {
-		errl.Println("maybe already removed.", ch.chidsrv, ch.chidsrv, ch.conv)
-		dumpStacks(ch.close_stacks[len(ch.close_stacks)-1])
-		info.Println("=======")
-		pcs := make([]uintptr, 16)
-		pcn := runtime.Callers(1, pcs)
-		dumpStacks(pcs[0:pcn])
+		errl.Println("maybe already removed or connect timeouted.", ch.chidsrv, ch.chidsrv, ch.conv)
+		// dumpStacks(ch.close_stacks[len(ch.close_stacks)-1])
+		// info.Println("=======")
+		// pcs := make([]uintptr, 16)
+		// pcn := runtime.Callers(1, pcs)
+		// dumpStacks(pcs[0:pcn])
 		// panic(ch.chidcli)
 	} else {
 		pcs := make([]uintptr, 16)

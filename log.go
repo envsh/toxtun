@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/cyfdecyf/color"
 )
@@ -33,7 +35,7 @@ var (
 	dbgRep responseLogging
 
 	logFile  io.Writer
-	logFlags = log.Flags()
+	logFlags = log.Flags() ^ log.Lshortfile // 去掉本log.go本身文件名
 
 	// make sure logger can be called before initLog
 	infoLog     = log.New(os.Stdout, "[INFO] ", logFlags)
@@ -84,7 +86,9 @@ func (d infoLogging) Printf(format string, args ...interface{}) {
 func (d infoLogging) Println(args ...interface{}) {
 	if d {
 		args = append(getFileLine(), args...)
-		infoLog.Println(args...)
+		line := fmt.Sprint(args...)
+		ldder.wrap(strings.TrimSpace(line))
+		// infoLog.Println(args...)
 	}
 }
 
@@ -153,5 +157,64 @@ func getFileLine() []interface{} {
 
 	pos := strings.LastIndexByte(file, os.PathSeparator)
 	sfile := file[pos+1:]
-	return []interface{}{sfile + ":" + strconv.Itoa(line) + " " + fn.Name()}
+	lst := strings.Split(fn.Name(), ".")
+	fnname := lst[len(lst)-1]
+	return []interface{}{sfile + ":" + strconv.Itoa(line) + " " + fnname + ": "}
+}
+
+///
+var ldder = newlinededuper()
+
+type linededuper struct {
+	lastLine  string
+	lastSame  bool
+	sameCount int
+}
+
+func newlinededuper() *linededuper {
+	this := &linededuper{}
+	this.lastLine = "---------------------------------------"
+	return this
+}
+func (this *linededuper) wrap(line string) string {
+	if line == this.lastLine {
+		if this.sameCount == 0 {
+			fmt.Print(infoLog.Prefix(), time.Now().Format("2006/01/02 15:04:05 "))
+		} else {
+			// fmt.Print(strings.Repeat("\b", this.sameCount-1) + strings.Repeat("+", this.sameCount))
+		}
+		fmt.Print("+")
+		this.sameCount++
+		this.lastSame = true
+	} else {
+		if this.lastSame { // 处理换行问题
+			fmt.Print("\n")
+			infoLog.Println(line)
+		} else {
+			infoLog.Println(line)
+		}
+		this.sameCount = 0
+		this.lastSame = false
+	}
+	this.lastLine = line
+	return ""
+}
+
+type eLogger struct {
+	mu     sync.Mutex // ensures atomic writes; protects the following fields
+	prefix string     // prefix to write at beginning of each line
+	flag   int        // properties
+	out    io.Writer  // destination for output
+	buf    []byte     // for accumulating text to write
+}
+
+func init() {
+	/*
+		info.Println("hahahha")
+		info.Println("hahahha")
+		info.Println("hahahha")
+		info.Println("hahahha")
+		info.Println("hehehe")
+		os.Exit(0)
+	*/
 }
