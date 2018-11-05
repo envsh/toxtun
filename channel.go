@@ -11,6 +11,7 @@ import (
 
 	"github.com/bitly/go-simplejson"
 	proto "github.com/golang/protobuf/proto"
+	deadlock "github.com/sasha-s/go-deadlock"
 	"github.com/vmihailenco/msgpack"
 )
 
@@ -197,6 +198,7 @@ func (this *Channel) dumpInfo() []interface{} {
 ///////////
 type ChannelPool struct {
 	pool   map[int32]*Channel
+	mu1    deadlock.RWMutex
 	pool2  map[uint32]*Channel
 	rcvbuf map[uint32][]*ClientReadyReadEvent
 }
@@ -210,6 +212,9 @@ func NewChannelPool() *ChannelPool {
 	return p
 }
 func (this *ChannelPool) putClient(ch *Channel) {
+	this.mu1.Lock()
+	defer this.mu1.Unlock()
+
 	this.pool[ch.chidcli] = ch
 	if ch.conv > 0 {
 		this.pool2[ch.conv] = ch
@@ -219,6 +224,9 @@ func (this *ChannelPool) putClient(ch *Channel) {
 
 // put lacked
 func (this *ChannelPool) putClientLacks(ch *Channel) {
+	this.mu1.Lock()
+	defer this.mu1.Unlock()
+
 	if _, ok := this.pool[ch.chidcli]; !ok {
 	}
 	this.pool2[ch.conv] = ch
@@ -226,6 +234,9 @@ func (this *ChannelPool) putClientLacks(ch *Channel) {
 }
 
 func (this *ChannelPool) putServer(ch *Channel) {
+	this.mu1.Lock()
+	defer this.mu1.Unlock()
+
 	this.pool[ch.chidsrv] = ch
 	this.pool2[ch.conv] = ch
 	appevt.Trigger("chanact", 1, len(this.pool), len(this.pool2))
@@ -240,6 +251,9 @@ func dumpStacks(pcs []uintptr) {
 }
 
 func (this *ChannelPool) rmClient(ch *Channel) {
+	this.mu1.Lock()
+	defer this.mu1.Unlock()
+
 	ch.rmctimes += 1
 	haserr := false
 
@@ -278,9 +292,25 @@ func (this *ChannelPool) rmClient(ch *Channel) {
 }
 
 func (this *ChannelPool) rmServer(ch *Channel) {
+	this.mu1.Lock()
+	defer this.mu1.Unlock()
+
 	delete(this.pool, ch.chidsrv)
 	delete(this.pool2, ch.conv)
 	appevt.Trigger("chanact", -1, len(this.pool), len(this.pool2))
+}
+
+func (this *ChannelPool) getPool1ById(id int32) *Channel {
+	this.mu1.Lock()
+	defer this.mu1.Unlock()
+
+	return this.pool[id]
+}
+func (this *ChannelPool) getPool2ById(id uint32) *Channel {
+	this.mu1.Lock()
+	defer this.mu1.Unlock()
+
+	return this.pool2[id]
 }
 
 ////////////

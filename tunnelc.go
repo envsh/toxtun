@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"mkuse/appcm"
@@ -14,6 +15,7 @@ import (
 	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/envsh/go-toxcore/mintox"
 	"github.com/kitech/goplusplus"
+	"golang.org/x/time/rate"
 )
 
 var (
@@ -269,7 +271,7 @@ func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, 
 		go this.pollClientReadyRead(ch)
 
 		time.AfterFunc(15*time.Second, func() {
-			if _, ok := this.chpool.pool[ch.chidcli]; ok {
+			if ch := this.chpool.getPool1ById(ch.chidcli); ch != nil {
 				this.clientCheckACKChan <- ClientCheckACKEvent{ch}
 			}
 		})
@@ -278,7 +280,7 @@ func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, 
 
 func (this *Tunnelc) clientCheckACKRecved(ch *Channel) {
 
-	if _, ok := this.chpool.pool[ch.chidcli]; ok && !ch.conn_ack_recved {
+	if ch_ := this.chpool.getPool1ById(ch.chidcli); ch_ != nil && !ch.conn_ack_recved {
 		info.Println("wait connection ack timeout", time.Now().Sub(ch.conn_begin_time))
 		this.connectFailedClean(ch)
 	}
@@ -315,8 +317,9 @@ func (this *Tunnelc) serveKcp() {
 			if n != -3 { // check read timeout for client
 				// 一般浏览器超时时间120s
 				dtime := int(time.Since(ch.last_net_recv).Seconds())
-				if dtime > 120 && ch.last_net_recv.Nanosecond() > ch.conn_begin_time.Nanosecond() {
+				if dtime > 1800 && ch.last_net_recv.Nanosecond() > ch.conn_begin_time.Nanosecond() {
 					info.Println("read timeout from kcp(remnet)", dtime, ch.conv, ch.conn_begin_time)
+					// TODO 有待更多测试
 					ch.addCloseReason("read timeout from kcp(remnet)")
 					ch.conn.Close()
 				}
@@ -334,7 +337,7 @@ func (this *Tunnelc) processKcpReadyRead(ch *Channel) {
 
 	pkt := parsePacket(buf)
 	if pkt.isdata() {
-		ch := this.chpool.pool[pkt.Chidcli]
+		ch := this.chpool.getPool1ById(pkt.Chidcli)
 		this.copyServer2Client(ch, pkt)
 		ch.last_net_recv = time.Now()
 	} else {
@@ -375,18 +378,28 @@ func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
 }
 
 func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
+	lmter := rate.NewLimiter(rate.Limit(1024*1024*3/2), 1024*1024*2)
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
-	rbuf := make([]byte, rdbufsz)
+	rbuf := make([]byte, rdbufsz*20)
 	for {
 		n, err := ch.conn.Read(rbuf)
 		if err != nil {
-			info.Println("chan read:", err, ch.chidcli, ch.chidsrv, ch.conv)
+			info.Println("chan sock read:", err, ch.chidcli, ch.chidsrv, ch.conv)
 			break
+		}
+
+		if true {
+			lmter.WaitN(context.Background(), n)
+			// sendbuf := gopp.BytesDup(rbuf[:n])
+			// this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n, false}
+			// continue
 		}
 
 		// 应用层控制kcp.WaitSnd()的大小
 		for {
-			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*3 {
+			// info.Printf("chan WaitSnd:%d, snd_wnd:%d, snd_wnd*3:%d, snd_buf:%d",
+			//	ch.kcp.WaitSnd(), ch.kcp.snd_wnd, ch.kcp.snd_wnd*3, len(ch.kcp.snd_buf))
+			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*8 {
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				// this.processClientReadyRead(ch, rbuf, n)
 				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n, false}
@@ -528,6 +541,7 @@ func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uin
 	}
 }
 
+// TODO 应该把数据发送到chan进入主循环再回来处理，就不会有concurrent问题
 func (this *Tunnelc) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) {
 	debug.Println(len(data), ctrl)
 
@@ -541,7 +555,7 @@ func (this *Tunnelc) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) 
 }
 func (this *Tunnelc) handleCtrlPacket(pkt *Packet, friendNumber uint32) {
 	if pkt.Command == CMDCONNACK {
-		if ch, ok := this.chpool.pool[pkt.Chidcli]; ok {
+		if ch := this.chpool.getPool1ById(pkt.Chidcli); ch != nil {
 			// ch.conv = pkt.Conv
 			// ch.chidsrv = pkt.Chidsrv
 			// ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
@@ -568,14 +582,15 @@ func (this *Tunnelc) handleCtrlPacket(pkt *Packet, friendNumber uint32) {
 			}
 		}
 	} else if pkt.Command == CMDCLOSEFIN {
-		if ch, ok := this.chpool.pool2[pkt.Conv]; ok {
-			ch.server_socket_close = true
-			this.promiseChannelClose(ch)
-		} else if ch, ok := this.chpool.pool[pkt.Chidcli]; ok {
-			info.Println("maybe server connection failed",
-				pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
+		ch2 := this.chpool.getPool2ById(pkt.Conv)
+		ch1 := this.chpool.getPool1ById(pkt.Chidcli)
+		if ch2 != nil {
+			ch2.server_socket_close = true
+			this.promiseChannelClose(ch2)
+		} else if ch1 != nil {
+			info.Println("maybe server connection failed", pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
 			// this.connectFailedClean(ch)
-			this.promiseChannelClose(ch)
+			this.promiseChannelClose(ch1)
 		} else {
 			info.Println("recv server close, but maybe client already closed",
 				pkt.Command, pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
@@ -592,7 +607,7 @@ func (this *Tunnelc) handleDataPacket(buf []byte, friendNumber uint32) {
 		errl.Println("wtf")
 	}
 	conv = binary.LittleEndian.Uint32(buf)
-	ch := this.chpool.pool2[conv] // BUG: fatal error: concurrent map read and map write
+	ch := this.chpool.getPool2ById(conv) // should be fixed by mutex
 	if ch == nil {
 		info.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		// TODO 应该给服务器回个关闭包
@@ -646,7 +661,7 @@ func (this *Tunnelc) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 			errl.Println("wtf")
 		}
 		conv = binary.LittleEndian.Uint32(buf)
-		ch := this.chpool.pool2[conv]
+		ch := this.chpool.getPool2ById(conv)
 		if ch == nil {
 			errl.Println("maybe has some problem")
 		}

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"io/ioutil"
 	"log"
 	"math"
+
 	// "log"
 	"bytes"
 	"encoding/binary"
@@ -13,6 +15,7 @@ import (
 	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/envsh/go-toxcore/mintox"
 	"github.com/kitech/goplusplus"
+	"golang.org/x/time/rate"
 )
 
 type Tunneld struct {
@@ -262,9 +265,9 @@ func (this *Tunneld) processKcpReadyRead(ch *Channel) {
 	pkt := parsePacket(buf)
 	if pkt.isconnack() {
 	} else if pkt.isdata() {
-		ch := this.chpool.pool[pkt.Chidsrv]
+		ch := this.chpool.getPool1ById(pkt.Chidsrv)
 		if ch == nil {
-			ch = this.chpool.pool2[pkt.Conv] // for quick handshake mode
+			ch = this.chpool.getPool2ById(pkt.Conv) // for quick handshake mode
 		}
 		debug.Println("processing channel data:", ch.chidsrv, len(pkt.Data), gopp.StrSuf(string(pkt.Data), 52))
 
@@ -335,9 +338,9 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 var spdc2 = mintox.NewSpeedCalc()
 
 func (this *Tunneld) pollServerReadyRead(ch *Channel) {
+	lmter := rate.NewLimiter(rate.Limit(1024*1024*2/2), 1024*1024*3/2)
 	// TODO 使用内存池
-	rbuf := make([]byte, rdbufsz)
-
+	rbuf := make([]byte, rdbufsz*5)
 	debug.Println("copying server to client:", ch.chidsrv, ch.chidsrv, ch.conv)
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
 	for {
@@ -345,6 +348,10 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 		if err != nil {
 			errl.Println(err, ch.chidsrv, ch.chidsrv, ch.conv)
 			break
+		}
+
+		if true {
+			lmter.WaitN(context.Background(), n)
 		}
 
 		// 控制kcp.WaitSnd()的大小
@@ -488,7 +495,7 @@ func (this *Tunneld) processKcpInputChan(evt ClientReadyReadEvent) {
 func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
 	// kcp包前4字段为conv，little hacky
 	conv := binary.LittleEndian.Uint32(buf)
-	ch := this.chpool.pool2[conv]
+	ch := this.chpool.getPool2ById(conv)
 	if ch == nil {
 		// try get sequence no
 		sego := kcp_parse_segment(buf)
@@ -527,7 +534,8 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 		go this.connectToBackend(ch)
 
 	} else if pkt.Command == CMDCLOSEFIN {
-		if ch, ok := this.chpool.pool2[pkt.Conv]; ok {
+		ch := this.chpool.getPool2ById(pkt.Conv)
+		if ch != nil {
 			info.Println("recv client close fin,", ch.chidcli, ch.chidsrv, ch.conv, pkt.Msgid)
 			ch.client_socket_close = true
 			this.promiseChannelClose(ch)
@@ -580,7 +588,7 @@ func (this *Tunneld) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint3
 			errl.Println("wtf")
 		}
 		conv := binary.LittleEndian.Uint32(buf)
-		ch := this.chpool.pool2[conv]
+		ch := this.chpool.getPool2ById(conv)
 		if ch == nil {
 			errl.Println("channel not found, maybe has some problem, maybe already closed", conv)
 		} else {

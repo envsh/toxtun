@@ -180,6 +180,8 @@ func NewKCP(conv uint32, output output_callback, extra interface{}) *KCP {
 
 // newSegment creates a KCP segment
 func (kcp *KCP) newSegment(size int) (seg segment) {
+	// pbuf := xmitBuf.Get().([]byte)
+	// info.Printf("pbuf len: %d, want: %d\n", len(pbuf), size)
 	seg.data = xmitBuf.Get().([]byte)[:size]
 	return
 }
