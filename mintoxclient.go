@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/envsh/go-toxcore/mintox"
-	"github.com/pkg/errors"
+	// "github.com/pkg/errors"
 	metrics "github.com/rcrowley/go-metrics"
 	"github.com/sasha-s/go-deadlock"
 	funk "github.com/thoas/go-funk"
@@ -314,7 +314,7 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 
 	itemid := this.selectRelay()
 	if itemid == "" {
-		err := errors.Errorf("no peer connected relay candidate: %d", len(this.clis))
+		err := fmt.Errorf("no peer connected relay candidate: %d", len(this.clis))
 		log.Println(lwarningp, err)
 		return nil, nil, err
 	}
@@ -322,12 +322,12 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 	clinfo, ok0 := this.clis[itemid]
 	this.clismu.RUnlock()
 	if !ok0 {
-		log.Println(lwarningp, errors.Errorf("cli not found"))
-		return nil, nil, errors.Errorf("cli not found")
+		log.Println(lwarningp, fmt.Errorf("cli not found"))
+		return nil, nil, fmt.Errorf("cli not found")
 	}
 	connid = clinfo.connid
 	if connid == 0 {
-		err := errors.Errorf("Invalid peer routing id: %d, servers: %d", connid, len(this.clis))
+		err := fmt.Errorf("Invalid peer routing id: %d, servers: %d", connid, len(this.clis))
 		log.Println(lwarningp, err)
 		return nil, nil, err
 	}
@@ -339,7 +339,7 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 	this.clismu.RUnlock()
 	if tcpcli == nil {
 		log.Println(lwarningp, "not found tcpcli:", connid, len(this.clis))
-		return nil, nil, errors.Errorf("not found tcpcli: %d, %d", connid, len(this.clis))
+		return nil, nil, fmt.Errorf("not found tcpcli: %d, %d", connid, len(this.clis))
 	}
 	if sendto != tcpcli.ServAddr {
 		// log.Println("switch relay", sendto, tcpcli.ServAddr)

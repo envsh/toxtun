@@ -231,7 +231,7 @@ func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, 
 	tunrec := config.getRecordByName(tname)
 	ch.ip = tunrec.rhost
 	ch.port = fmt.Sprintf("%d", tunrec.rport)
-	ch.conv = makeKcpConv(this.tox.SelfGetPublicKey(), ch.ip, ch.port)
+	ch.conv = makeKcpConv(this.tox.SelfGetPublicKey(), ch.ip, ch.port+gopp.RandomNumber(8))
 	this.chpool.putClient(ch)
 
 	toxtunid := tunrec.rpubkey

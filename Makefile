@@ -6,9 +6,9 @@ GOVVV=`govvv -flags -version ${VERSION}|sed 's/=/=GOVVV-/g'`
 all: dynamic
 
 dynamic:
-	protoc --go_out=plugins=:. *.proto
+	# protoc --go_out=plugins=:. *.proto
 	PKG_CONFIG_PATH=/opt/toxcore-static2/lib64/pkgconfig CGO_LDFLAGS="-lopus -lsodium" \
-		go build -v -i -pkgdir=~/oss/pkg/linux_amd64_clang -ldflags "${GOVVV}" .
+		go build -v -i -pkgdir=/home/me/oss/pkg/linux_amd64_clang -ldflags "${GOVVV}" .
 	mv toxtun-go toxtun
 
 # 静态编译libtoxcore与其依赖库
