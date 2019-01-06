@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"mkuse/appcm"
 	"net"
 
 	// "strings"
 	"bytes"
 	"encoding/binary"
 	"time"
+
+	"mkuse/appcm"
+	"mkuse/rudp"
 
 	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/envsh/go-toxcore/mintox"
@@ -132,7 +134,8 @@ func (this *Tunnelc) serve() {
 		// case evt := <-this.kcpOutputChan:
 		// 	this.processKcpOutput(evt.buf, evt.size, evt.extra)
 		case evt := <-this.kcpInputChan:
-			evt.ch.kcp.Input(evt.buf, true, true)
+			// evt.ch.kcp.Input(evt.buf, true, true)
+			evt.ch.rudp_.Input(evt.buf)
 		case evt := <-this.newConnChan:
 			this.initConnChannel(evt.conn, evt.times, evt.btime, evt.tname)
 		case evt := <-this.clientReadyReadChan:
@@ -237,11 +240,69 @@ func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, 
 	toxtunid := tunrec.rpubkey
 	pkt := ch.makeConnectSYNPacket()
 	var err error
-	{
+	if !this.usemtox {
 		_, err = this.FriendSendMessage(toxtunid, string(pkt.toJson()))
+	} else {
+		err = this.mtox.sendData(pkt.toJson(), true, true)
 	}
-	{
-		err = this.mtox.sendData(pkt.toJson(), true)
+
+	if err != nil {
+		// 连接失败
+		debug.Println(err, tname)
+		this.chpool.rmClient(ch)
+		if times < 10 {
+			go func() {
+				time.Sleep(500 * time.Millisecond)
+				this.newConnChan <- NewConnEvent{conn, times + 1, btime, tname}
+			}()
+		} else {
+			info.Println("connect timeout:", times, time.Now().Sub(btime), tname)
+			conn.Close()
+			appevt.Trigger("connerr", tname)
+		}
+		return
+	} else {
+		// ch.conv = pkt.Conv
+		ch.chidsrv = pkt.Chidsrv
+		// ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+		// ch.kcp.SetMtu(tunmtu) // TODO for tcp, little bigger
+		// ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
+		// ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
+		ch.rudp_ = rudp.NewRUDP(ch.conv, func(data []byte, prior bool) error {
+			return this.onKcpOutput2(data, len(data), ch, prior)
+		})
+		// ch.fp, _ = os.OpenFile(fmt.Sprintf("convc%d", ch.conv), os.O_RDWR|os.O_CREATE, 0644)
+		this.chpool.putClientLacks(ch)
+		// can read now，不能阻塞，开新的goroutine
+		// go this.pollClientReadyRead(ch)
+		go this.pollServerReadyRead(ch)
+
+		time.AfterFunc(15*time.Second, func() {
+			if ch := this.chpool.getPool1ById(ch.chidcli); ch != nil {
+				this.clientCheckACKChan <- ClientCheckACKEvent{ch}
+			}
+		})
+	}
+}
+
+func (this *Tunnelc) initConnChannel_dep(conn net.Conn, times int, btime time.Time, tname string) {
+	ch := NewChannelClient(conn, tname)
+	// ch.ip = "127.0.0.1"
+	// ch.port = "8118"
+	tunrec := config.getRecordByName(tname)
+	ch.ip = tunrec.rhost
+	ch.port = fmt.Sprintf("%d", tunrec.rport)
+	ch.conv = makeKcpConv(this.tox.SelfGetPublicKey(), ch.ip, ch.port+gopp.RandomNumber(8))
+	this.chpool.putClient(ch)
+
+	toxtunid := tunrec.rpubkey
+	pkt := ch.makeConnectSYNPacket()
+	var err error
+	if this.usemtox {
+		_, err = this.FriendSendMessage(toxtunid, string(pkt.toJson()))
+	} else {
+		err = this.mtox.sendData(pkt.toJson(), true, true)
+		gopp.ErrPrint(err)
 	}
 
 	if err != nil {
@@ -345,64 +406,124 @@ func (this *Tunnelc) processKcpReadyRead(ch *Channel) {
 	}
 }
 
-func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
+func (this *Tunnelc) onKcpOutput2(buf []byte, size int, extra interface{}, prior bool) error {
 	if size <= 0 {
 		// 如果总是出现，并且不影响程序运行，那么也就不是bug了
-		return
+		return fmt.Errorf("invalid size %d", size)
 	}
 
 	ch, ok := extra.(*Channel)
 	if !ok {
 		errl.Println("extra is not a *Channel:", extra)
-		return
+		return fmt.Errorf("extra is not a *Channel")
 	}
 
 	tunrec := config.getRecordByName(ch.tname)
 	toxtunid := tunrec.rpubkey
 
-	msg := string([]byte{254}) + string(buf[:size])
+	var sndlen int = size
 	var err error
 	if !this.usemtox {
+		sndlen += 1
+		msg := string([]byte{254}) + string(buf[:size])
 		err = this.FriendSendLossyPacket(toxtunid, msg)
 		// msg := string([]byte{191}) + string(buf[:size])
 		// err := this.tox.FriendSendLosslessPacket(0, msg)
 	} else {
-		err = this.mtox.sendData(buf[:size], false)
+		err = this.mtox.sendData(buf[:size], false, prior)
 	}
 	if err != nil {
 		debug.Println(err)
 	} else {
-		debug.Println("kcp->tox:", len(msg))
+		debug.Println("kcp->tox:", sndlen)
 	}
+	return err
+}
 
+func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
+	this.onKcpOutput2(buf, size, extra, false)
 }
 
 func (this *Tunnelc) pollClientReadyRead(ch *Channel) {
 	lmter := rate.NewLimiter(rate.Limit(1024*1024*3/2), 1024*1024*2)
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
-	rbuf := make([]byte, rdbufsz*20)
+
 	for {
+		rbuf := make([]byte, rdbufsz)
 		n, err := ch.conn.Read(rbuf)
 		if err != nil {
 			info.Println("chan sock read:", err, ch.chidcli, ch.chidsrv, ch.conv)
 			break
 		}
 
-		if true {
+		if false {
 			lmter.WaitN(context.Background(), n)
 			// sendbuf := gopp.BytesDup(rbuf[:n])
 			// this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n, false}
 			// continue
 		}
+		wn, err := ch.rudp_.Write(rbuf[:n])
+		gopp.ErrPrint(err, wn)
+		if err != nil {
+			break
+		}
 
 		// 应用层控制kcp.WaitSnd()的大小
-		for {
+		for false {
 			// info.Printf("chan WaitSnd:%d, snd_wnd:%d, snd_wnd*3:%d, snd_buf:%d",
 			//	ch.kcp.WaitSnd(), ch.kcp.snd_wnd, ch.kcp.snd_wnd*3, len(ch.kcp.snd_buf))
 			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*8 {
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				// this.processClientReadyRead(ch, rbuf, n)
 				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, n, false}
+				break
+			} else {
+				time.Sleep(3 * time.Millisecond)
+			}
+		}
+	}
+
+	// 连接结束
+	debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
+	ch.client_socket_close = true
+	this.clientCloseChan <- ClientCloseEvent{ch}
+	appevt.Trigger("connact", -1)
+}
+
+func (this *Tunnelc) pollServerReadyRead(ch *Channel) {
+	lmter := rate.NewLimiter(rate.Limit(1024*1024*3/2), 1024*1024*2)
+	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
+
+	for {
+		rbuf := make([]byte, rdbufsz)
+		rn, err := ch.rudp_.Read(rbuf)
+		if err != nil {
+			info.Println("chan sock read:", err, ch.chidcli, ch.chidsrv, ch.conv)
+			break
+		}
+
+		if false {
+			lmter.WaitN(context.Background(), rn)
+			// sendbuf := gopp.BytesDup(rbuf[:n])
+			// this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, rn, false}
+			// continue
+		}
+		wn, err := ch.conn.Write(rbuf[:rn])
+		gopp.ErrPrint(err, wn)
+		// ch.fp.Write(rbuf[:rn])
+		if err != nil {
+			break
+		}
+		log.Println("rudp -> cli2", rn)
+
+		// 应用层控制kcp.WaitSnd()的大小
+		for false {
+			// info.Printf("chan WaitSnd:%d, snd_wnd:%d, snd_wnd*3:%d, snd_buf:%d",
+			//	ch.kcp.WaitSnd(), ch.kcp.snd_wnd, ch.kcp.snd_wnd*3, len(ch.kcp.snd_buf))
+			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*8 {
+				sendbuf := gopp.BytesDup(rbuf[:rn])
+				// this.processClientReadyRead(ch, rbuf, rn)
+				this.clientReadyReadChan <- ClientReadyReadEvent{ch, sendbuf, rn, false}
 				break
 			} else {
 				time.Sleep(3 * time.Millisecond)
@@ -427,7 +548,7 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 		if !this.usemtox {
 			_, err = this.FriendSendMessage(toxtunid, string(pkt.toJson()))
 		} else {
-			err = this.mtox.sendData(pkt.toJson(), true)
+			err = this.mtox.sendData(pkt.toJson(), true, true)
 		}
 		if err != nil {
 			// 连接失败
@@ -436,12 +557,14 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 		}
 		ch.addCloseReason("client_close")
 		info.Println("client socket closed, notify server.", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
+		ch.rudp_.Close()
 		this.chpool.rmClient(ch)
 		appevt.Trigger("closereason", ch.closeReason())
 	} else if ch.client_socket_close == true && ch.server_socket_close == true {
 		//
 		ch.addCloseReason("both_close")
 		info.Println("both socket closed:", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
+		ch.rudp_.Close()
 		this.chpool.rmClient(ch)
 		appevt.Trigger("closereason", ch.closeReason())
 	} else if ch.client_socket_close == false && ch.server_socket_close == true {
@@ -449,6 +572,7 @@ func (this *Tunnelc) promiseChannelClose(ch *Channel) {
 		info.Println("server socket closed, force close client", ch.chidcli, ch.chidsrv, ch.conv, ch.closeReason())
 		ch.client_socket_close = true // ch.conn真正关闭可能有延时，造成此处重复处理。提前设置关闭标识。
 		ch.conn.Close()
+		ch.rudp_.Close()
 		appevt.Trigger("closereason", ch.closeReason())
 	} else {
 		info.Println("what state:", ch.chidcli, ch.chidsrv, ch.conv,
@@ -569,7 +693,7 @@ func (this *Tunnelc) handleCtrlPacket(pkt *Packet, friendNumber uint32) {
 			appevt.Trigger("connact", 1)
 			ch.conn_ack_recved = true
 			// can read now，不能阻塞，开新的goroutine
-			// go this.pollClientReadyRead(ch)
+			go this.pollClientReadyRead(ch)
 		} else {
 			info.Println("maybe conn ack response timeout", pkt.Chidcli, pkt.Chidsrv, pkt.Conv)
 			// TODO 应该给服务器回个关闭包
@@ -578,7 +702,7 @@ func (this *Tunnelc) handleCtrlPacket(pkt *Packet, friendNumber uint32) {
 			if !this.usemtox {
 				this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
 			} else {
-				this.mtox.sendData(newpkt.toJson(), true)
+				this.mtox.sendData(newpkt.toJson(), true, true)
 			}
 		}
 	} else if pkt.Command == CMDCLOSEFIN {
@@ -619,7 +743,7 @@ func (this *Tunnelc) handleDataPacket(buf []byte, friendNumber uint32) {
 			_, err := this.tox.FriendSendMessage(friendNumber, string(newpkt.toJson()))
 			gopp.ErrPrint(err)
 		} else {
-			err := this.mtox.sendData(newpkt.toJson(), true)
+			err := this.mtox.sendData(newpkt.toJson(), true, true)
 			gopp.ErrPrint(err)
 		}
 	} else {

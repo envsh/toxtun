@@ -156,7 +156,7 @@ func (this *MTox) sendBBTResp(tcpcli *mintox.TCPClient, reqpkt []byte) {
 	pongpkt.Write(TCP_PACKET_BBTRESP)
 	pongpkt.Write(reqpkt[len(TCP_PACKET_RTTPING) : len(TCP_PACKET_RTTPING)+int(unsafe.Sizeof(uint64(0)))])
 	// _, err := tcpcli.SendCtrlPacket(pongpkt.Bytes())
-	_, err := tcpcli.SendDataPacket(clinfo.connid, pongpkt.Bytes())
+	_, err := tcpcli.SendDataPacket(clinfo.connid, pongpkt.Bytes(), true)
 	if false {
 		gopp.ErrPrint(err)
 	}
@@ -223,7 +223,7 @@ func (this *MTox) sendBoundWidthData(binpk string, clinfo *ClientInfo) {
 	for i := 0; i < cnt; i++ {
 		buf := gopp.BytesDup(pkt.Bytes()) // !!!
 		// _, err := tcpcli.SendCtrlPacket(buf)
-		_, err := tcpcli.SendDataPacket(connid, buf)
+		_, err := tcpcli.SendDataPacket(connid, buf, false)
 		if err != nil {
 			leftn := cnt - i
 			spditm.bbPktSize -= int(unsafe.Sizeof(uint64(0)))*leftn + pktsz*leftn

@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"mkuse/rudp"
+
 	"github.com/bitly/go-simplejson"
 	proto "github.com/golang/protobuf/proto"
 	deadlock "github.com/sasha-s/go-deadlock"
@@ -69,6 +71,8 @@ type Channel struct {
 	conv    uint32
 	toxid   string // 仅用于服务器端
 	kcp     *KCP
+	rudp_   *rudp.RUDP
+	// fp      *os.File
 
 	// 关闭状态
 	client_socket_close bool

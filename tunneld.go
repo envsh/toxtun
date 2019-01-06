@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"math"
+	"mkuse/rudp"
+	"sync/atomic"
 
 	// "log"
 	"bytes"
@@ -24,7 +27,7 @@ type Tunneld struct {
 	usemtox bool
 	chpool  *ChannelPool
 
-	kcpNextUpdateWait int
+	kcpNextUpdateWait int32
 
 	toxPollChan chan ToxPollEvent
 	// toxReadyReadChan    chan ToxReadyReadEvent
@@ -55,23 +58,12 @@ func NewTunneld() *Tunneld {
 	log.Println("cli pubkey?", pubkey.ToHex())
 	this.usemtox = true
 
-	// callbacks
-	this.mtox.DataFunc = this.onMinToxData
-
-	// callbacks
-	t.CallbackSelfConnectionStatus(this.onToxnetSelfConnectionStatus, nil)
-	t.CallbackFriendRequest(this.onToxnetFriendRequest, nil)
-	t.CallbackFriendConnectionStatus(this.onToxnetFriendConnectionStatus, nil)
-	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
-	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
-	t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
-
 	///
+	this.init()
 	return this
 }
 
-func (this *Tunneld) serve() {
-
+func (this *Tunneld) init() {
 	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
 	// this.toxReadyReadChan = make(chan ToxReadyReadEvent, 0)
 	// this.toxMessageChan = make(chan ToxMessageEvent, 0)
@@ -84,6 +76,21 @@ func (this *Tunneld) serve() {
 	this.serverReadyReadChan = make(chan ServerReadyReadEvent, mpcsz)
 	this.serverCloseChan = make(chan ServerCloseEvent, mpcsz)
 
+	// callbacks
+	this.mtox.DataFunc = this.onMinToxData
+
+	// callbacks
+	t := this.tox
+	t.CallbackSelfConnectionStatus(this.onToxnetSelfConnectionStatus, nil)
+	t.CallbackFriendRequest(this.onToxnetFriendRequest, nil)
+	t.CallbackFriendConnectionStatus(this.onToxnetFriendConnectionStatus, nil)
+	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
+	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
+	t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
+
+}
+
+func (this *Tunneld) serve() {
 	// install pollers
 	go func() {
 		for {
@@ -94,8 +101,8 @@ func (this *Tunneld) serve() {
 	}()
 	go func() {
 		for {
-			if this.kcpNextUpdateWait > 0 {
-				time.Sleep(time.Duration(this.kcpNextUpdateWait) * time.Millisecond)
+			if atomic.LoadInt32(&this.kcpNextUpdateWait) > 0 {
+				time.Sleep(time.Duration(atomic.LoadInt32(&this.kcpNextUpdateWait)) * time.Millisecond)
 			} else {
 				// time.Sleep(20 * time.Millisecond)
 				time.Sleep(time.Duration(smuse.kcp_interval) * time.Millisecond)
@@ -133,7 +140,9 @@ func (this *Tunneld) serve() {
 		case evt := <-this.serverCloseChan:
 			this.promiseChannelClose(evt.ch)
 		case <-this.toxPollChan:
-			iterate(this.tox)
+			if !this.usemtox {
+				iterate(this.tox)
+			}
 			// case evt := <-this.toxReadyReadChan:
 			// 	this.processFriendLossyPacket(this.tox, evt.friendNumber, evt.message, nil)
 			// case evt := <-this.toxMessageChan:
@@ -176,10 +185,12 @@ func (this *Tunneld) serveKcp() {
 
 		mints := gopp.MinU32(nxtss)
 		if mints > 10 && mints != math.MaxUint32 {
-			this.kcpNextUpdateWait = int(mints)
+			// this.kcpNextUpdateWait = int(mints)
+			atomic.StoreInt32(&this.kcpNextUpdateWait, int32(mints))
 			return
 		} else {
-			this.kcpNextUpdateWait = 10
+			// this.kcpNextUpdateWait = 10
+			atomic.StoreInt32(&this.kcpNextUpdateWait, 10)
 		}
 
 		for _, ch := range chks {
@@ -224,29 +235,36 @@ func (this *Tunneld) kcpCheckClose() {
 	}
 }
 
-func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
+func (this *Tunneld) onKcpOutput2(buf []byte, size int, extra interface{}, prior bool) error {
 	if size <= 0 {
 		// 如果总是出现，并且不影响程序运行，那么也就不是bug了
 		// info.Println("wtf")
-		return
+		return fmt.Errorf("Invalid size %d", size)
 	}
 	debug.Println(len(buf), "//", size, "//", string(gopp.SubBytes(buf, 52)))
 	ch := extra.(*Channel)
 
-	msg := string([]byte{254}) + string(buf[:size])
+	var sndlen int = size
 	var err error
 	if !this.usemtox {
+		sndlen += 1
+		msg := string([]byte{254}) + string(buf[:size])
 		err = this.FriendSendLossyPacket(ch.toxid, msg)
 		// msg := string([]byte{191}) + string(buf[:size])
 		// err := this.tox.FriendSendLosslessPacket(0, msg)
 	} else {
-		err = this.mtox.sendData(buf[:size], false)
+		err = this.mtox.sendData(buf[:size], false, prior)
 	}
 	if err != nil {
 		debug.Println(err)
 	} else {
-		debug.Println("kcp->tox:", len(msg), time.Now().String())
+		debug.Println("kcp->tox:", sndlen, time.Now().String())
 	}
+	return err
+}
+
+func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
+	this.onKcpOutput2(buf, size, extra, false)
 }
 
 func (this *Tunneld) processKcpReadyRead(ch *Channel) {
@@ -315,7 +333,7 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 	if !this.usemtox {
 		_, err = this.FriendSendMessage(ch.toxid, string(repkt.toJson()))
 	} else {
-		err = this.mtox.sendData(repkt.toJson(), true)
+		err = this.mtox.sendData(repkt.toJson(), true, true)
 	}
 	if err != nil {
 		debug.Println(err)
@@ -332,6 +350,7 @@ func (this *Tunneld) connectToBackend(ch *Channel) {
 			this.kcpInputChan <- *rcvs[i]
 		}
 	}
+	go this.pollClientReadyRead(ch)
 	this.pollServerReadyRead(ch)
 }
 
@@ -340,27 +359,82 @@ var spdc2 = mintox.NewSpeedCalc()
 func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 	lmter := rate.NewLimiter(rate.Limit(1024*1024*2/2), 1024*1024*3/2)
 	// TODO 使用内存池
-	rbuf := make([]byte, rdbufsz*5)
 	debug.Println("copying server to client:", ch.chidsrv, ch.chidsrv, ch.conv)
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
 	for {
+		rbuf := make([]byte, rdbufsz)
 		n, err := ch.conn.Read(rbuf)
 		if err != nil {
 			errl.Println(err, ch.chidsrv, ch.chidsrv, ch.conv)
 			break
 		}
 
-		if true {
+		if false {
 			lmter.WaitN(context.Background(), n)
 		}
 
+		wn, err := ch.rudp_.Write(rbuf[:n])
+		gopp.ErrPrint(err, wn)
+		// ch.fp.Write(rbuf[:n])
+		if err != nil {
+			break
+		}
+
 		// 控制kcp.WaitSnd()的大小
-		for {
+		for false {
 			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*3 {
 				// this.processServerReadyRead(ch, rbuf, n)
 				sendbuf := gopp.BytesDup(rbuf[:n])
 				this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, n, false}
 				spdc2.Data(n)
+				// log.Printf("--- poll srv data speed: %d, WaitSnd:%d, snd_wnd:%d\n",
+				// 	spdc2.Avgspd, ch.kcp.WaitSnd(), ch.kcp.snd_wnd)
+				break
+			} else {
+				time.Sleep(3 * time.Millisecond)
+			}
+		}
+	}
+
+	// 连接结束
+	debug.Println("connection closed, cleaning up...:", ch.chidcli, ch.chidsrv, ch.conv)
+	ch.server_socket_close = true
+	this.serverCloseChan <- ServerCloseEvent{ch}
+	appevt.Trigger("connact", -1)
+}
+
+func (this *Tunneld) pollClientReadyRead(ch *Channel) {
+	lmter := rate.NewLimiter(rate.Limit(1024*1024*2/2), 1024*1024*3/2)
+	// TODO 使用内存池
+
+	debug.Println("copying client to server:", ch.chidsrv, ch.chidsrv, ch.conv)
+	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
+	for {
+		rbuf := make([]byte, rdbufsz)
+		rn, err := ch.rudp_.Read(rbuf)
+		if err != nil {
+			errl.Println(err, ch.chidsrv, ch.chidsrv, ch.conv)
+			break
+		}
+
+		if false {
+			lmter.WaitN(context.Background(), rn)
+		}
+
+		wn, err := ch.conn.Write(rbuf[:rn])
+		gopp.ErrPrint(err, wn)
+		if err != nil {
+			break
+		}
+		log.Println("rudp -> tund", rn, wn)
+
+		// 控制kcp.WaitSnd()的大小
+		for false {
+			if uint32(ch.kcp.WaitSnd()) < ch.kcp.snd_wnd*3 {
+				// this.processServerReadyRead(ch, rbuf, n)
+				sendbuf := gopp.BytesDup(rbuf[:rn])
+				this.serverReadyReadChan <- ServerReadyReadEvent{ch, sendbuf, rn, false}
+				spdc2.Data(rn)
 				// log.Printf("--- poll srv data speed: %d, WaitSnd:%d, snd_wnd:%d\n",
 				// 	spdc2.Avgspd, ch.kcp.WaitSnd(), ch.kcp.snd_wnd)
 				break
@@ -493,22 +567,44 @@ func (this *Tunneld) processKcpInputChan(evt ClientReadyReadEvent) {
 	}
 }
 func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
+	type segheader struct {
+		conv   uint32
+		cmd    uint8
+		sn     uint32
+		chksum uint32
+		datlen uint32
+		ts     uint32
+	}
+	sego := &segheader{}
+	seg := sego
+	decodeHeader := func(data []byte) error {
+		buf := bytes.NewReader(data)
+		binary.Read(buf, binary.LittleEndian, &seg.conv)
+		binary.Read(buf, binary.LittleEndian, &seg.cmd)
+		binary.Read(buf, binary.LittleEndian, &seg.sn)
+		binary.Read(buf, binary.LittleEndian, &seg.chksum)
+		binary.Read(buf, binary.LittleEndian, &seg.datlen)
+		return nil
+	}
 	// kcp包前4字段为conv，little hacky
 	conv := binary.LittleEndian.Uint32(buf)
 	ch := this.chpool.getPool2ById(conv)
 	if ch == nil {
 		// try get sequence no
-		sego := kcp_parse_segment(buf)
-		info.Println("channel not found, maybe has some problem, maybe closed", conv, sego.sn, sego.ts)
+		// sego := kcp_parse_segment(buf)
+		decodeHeader(buf)
+		info.Println("channel not found, maybe has some problem, maybe closed", conv, sego.sn, sego.ts, sego.datlen)
 		if sego.sn == 0 {
 			evt := &ClientReadyReadEvent{nil, buf, len(buf), false}
 			this.chpool.rcvbuf[conv] = append(this.chpool.rcvbuf[conv], evt)
 		}
 	} else {
 		// n := ch.kcp.Input(buf, true, true)
-		in := ch.kcp.Input(buf, true, true)
-		if in < 0 {
-			errl.Println("kcp input err:", in, conv, len(buf))
+		// in := ch.kcp.Input(buf, true, true)
+		err := ch.rudp_.Input(buf)
+		gopp.ErrPrint(err)
+		if err != nil {
+			errl.Println("kcp input err:", conv, len(buf))
 		} else {
 			n := len(buf)
 			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
@@ -525,10 +621,14 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 		ch.ip = pkt.Remoteip
 		ch.port = pkt.Remoteport
 		ch.toxid = friendId
-		ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
-		ch.kcp.SetMtu(tunmtu)
-		ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
-		ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
+		// ch.kcp = NewKCP(ch.conv, this.onKcpOutput, ch)
+		// ch.kcp.SetMtu(tunmtu)
+		// ch.kcp.WndSize(smuse.wndsz, smuse.wndsz)
+		// ch.kcp.NoDelay(smuse.nodelay, smuse.interval, smuse.resend, smuse.nc)
+		ch.rudp_ = rudp.NewRUDP(ch.conv, func(data []byte, prior bool) error {
+			return this.onKcpOutput2(data, len(data), ch, prior)
+		})
+		// ch.fp, _ = os.OpenFile(fmt.Sprintf("convs%d", ch.conv), os.O_CREATE|os.O_RDWR, 0644)
 
 		this.chpool.putServer(ch)
 		go this.connectToBackend(ch)

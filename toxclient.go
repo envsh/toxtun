@@ -92,6 +92,7 @@ func set_bootstrap_group(mode string) {
 		}
 	case "server": // server连接全部，由客户端选择连接哪些节点
 		servers = tmpsrvs
+		servers = cn_servers
 	default:
 		log.Fatalln("not supported mode:", mode)
 	}

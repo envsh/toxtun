@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/envsh/go-toxcore/mintox"
@@ -180,14 +181,23 @@ func (this *MTox) onRoutingStatus(object mintox.Object, number uint32, connid ui
 		log.Println(ldebugp, "routing status connid:", connid, status, tcpcli.ServAddr)
 	}
 	this.clismu.Lock()
-	defer this.clismu.Unlock()
 	this.clis[tcpcli.ServPubkey.BinStr()].status = status
 	this.clis[tcpcli.ServPubkey.BinStr()].connid = connid
 	if status == 2 {
-		this.addRelay(tcpcli.ServPubkey.BinStr())
 		this.sendRTTPing(tcpcli.ServPubkey.BinStr(), this.clis[tcpcli.ServPubkey.BinStr()])
 	} else if status < 2 {
 		// delete(this.conns[tcpcli.ServPubkey.BinStr()], connid)
+	}
+	this.clismu.Unlock()
+	if status == 2 {
+		this.addRelay(tcpcli.ServPubkey.BinStr())
+	} else if status < 2 {
+		// err := tcpcli.Close()
+		// gopp.ErrPrint(err)
+		if this.friendpks != "" {
+			err := tcpcli.ConnectPeer(this.friendpks)
+			gopp.ErrPrint(err)
+		}
 	}
 }
 
@@ -255,14 +265,14 @@ var last_show_sent_speed time.Time
 
 // 一种方式，上层的虚拟连接使用任意的一个连接发送数据
 // 一种方式，上层的虚拟连接初始选择任意一个连接，并固定使用这一个。
-func (this *MTox) sendData(data []byte, ctrl bool) error {
+func (this *MTox) sendData(data []byte, ctrl bool, prior bool) error {
 	var err error
 	var spdc *mintox.SpeedCalc
 	var tcpcli *mintox.TCPClient
 	data = append(gopp.IfElse(ctrl, TCP_PACKET_TUNCTRL, TCP_PACKET_TUNDATA).([]byte), data...)
 	rlycnt := len(this.relays)
 	if rlycnt == 0 {
-		this.calcPriority()
+		// this.calcPriority()
 		rlycnt = len(this.relays)
 	}
 	rlycnt = gopp.IfElseInt(rlycnt > 2, 2, rlycnt)
@@ -270,10 +280,10 @@ func (this *MTox) sendData(data []byte, ctrl bool) error {
 	for tryi := 0; tryi < rlycnt; tryi++ {
 		btime := time.Now()
 		if ctrl {
-			tcpcli, spdc, err = this.sendDataImpl(data)
+			tcpcli, spdc, err = this.sendDataImpl(data, prior)
 		} else {
 			for i := 0; i < 1; i++ {
-				tcpcli, spdc, err = this.sendDataImpl(data)
+				tcpcli, spdc, err = this.sendDataImpl(data, prior)
 			}
 		}
 		gopp.ErrPrint(err)
@@ -309,7 +319,7 @@ func (this *MTox) sendData(data []byte, ctrl bool) error {
 
 var sendto = ""
 
-func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCalc, error) {
+func (this *MTox) sendDataImpl(data []byte, prior bool) (*mintox.TCPClient, *mintox.SpeedCalc, error) {
 	var connid uint8
 
 	itemid := this.selectRelay()
@@ -318,8 +328,13 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 		log.Println(lwarningp, err)
 		return nil, nil, err
 	}
+
+	var tcpcli *mintox.TCPClient
+	var spdc *mintox.SpeedCalc
 	this.clismu.RLock()
 	clinfo, ok0 := this.clis[itemid]
+	tcpcli = clinfo.tcpcli
+	spdc = clinfo.spdc
 	this.clismu.RUnlock()
 	if !ok0 {
 		log.Println(lwarningp, fmt.Errorf("cli not found"))
@@ -331,21 +346,17 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 		log.Println(lwarningp, err)
 		return nil, nil, err
 	}
-	var tcpcli *mintox.TCPClient
-	var spdc *mintox.SpeedCalc
-	this.clismu.RLock()
-	tcpcli = this.clis[itemid].tcpcli
-	spdc = this.clis[itemid].spdc
-	this.clismu.RUnlock()
 	if tcpcli == nil {
 		log.Println(lwarningp, "not found tcpcli:", connid, len(this.clis))
 		return nil, nil, fmt.Errorf("not found tcpcli: %d, %d", connid, len(this.clis))
 	}
+
 	if sendto != tcpcli.ServAddr {
 		// log.Println("switch relay", sendto, tcpcli.ServAddr)
 		// sendto = tcpcli.ServAddr
 	}
-	_, err := tcpcli.SendDataPacket(connid, data)
+	var err error
+	_, err = tcpcli.SendDataPacket(connid, data, prior)
 	gopp.ErrPrint(err)
 	if err != nil {
 		// return tcpcli, spdc, err
@@ -356,9 +367,9 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 		spdc.Data(len(data))
 		appcm.Meter(fmt.Sprintf("mintoxc.sent.cnt.%s", srvip)).Mark(1)
 		appcm.Meter(fmt.Sprintf("mintoxc.sent.len.%s", srvip)).Mark(int64(len(data)))
-		clinfo.spditm.LastUseTime = time.Now()
+		// clinfo.spditm.LastUseTime = time.Now()
 	}
-	sentcntm1 := appcm.Meter(fmt.Sprintf("mintoxc.sent.cnt.%s", srvip))
+	// sentcntm1 := appcm.Meter(fmt.Sprintf("mintoxc.sent.cnt.%s", srvip))
 	sentlenm1 := appcm.Meter(fmt.Sprintf("mintoxc.sent.len.%s", srvip))
 	sentcntname := fmt.Sprintf("mintoxc.sent.cnt.%s", srvip)
 	timc.Mark(sentcntname) // include failed
@@ -375,8 +386,9 @@ func (this *MTox) sendDataImpl(data []byte) (*mintox.TCPClient, *mintox.SpeedCal
 	if err == nil {
 		if int(sentlenm1.Rate1()) > 0 {
 			// log.Println(clinfo.spditm.BottleneckBandwidth, int(sentlenm1.Rate1()), sentcntm1.Count(), srvip)
-			hmspdval := calchmval(float64(clinfo.spditm.BottleneckBandwidth), sentlenm1.Rate1(), float64(sentcntm1.Count()))
-			clinfo.spditm.BottleneckBandwidth = int(hmspdval)
+			// TODO BottleneckBandwidth r/w race
+			// hmspdval := calchmval(float64(clinfo.spditm.BottleneckBandwidth), sentlenm1.Rate1(), float64(sentcntm1.Count()))
+			// clinfo.spditm.BottleneckBandwidth = int(hmspdval)
 		}
 	}
 	return tcpcli, spdc, err
@@ -391,9 +403,13 @@ func (this *MTox) selectRelay() string {
 		// log.Println("not enough candidate relays:", this.relays)
 	}
 
-	this.clismu.RLock()
+	this.relaysmu.RLock()
+	defer this.relaysmu.RUnlock()
 	keys := this.relays
 	itemid := this.picker.SelectOne(keys, func(item string) bool {
+		this.clismu.RLock()
+		defer this.clismu.RUnlock()
+
 		if clinfo, ok := this.clis[item]; ok {
 			if clinfo.status == 2 {
 				return true
@@ -401,13 +417,13 @@ func (this *MTox) selectRelay() string {
 		}
 		return false
 	})
-	this.clismu.RUnlock()
 	return itemid
 }
 
 func (this *MTox) addRelay(key string) {
 	this.relaysmu.Lock()
 	defer this.relaysmu.Unlock()
+
 	if !funk.Contains(this.relays, key) {
 		this.relays = append(this.relays, key)
 	}
@@ -415,6 +431,7 @@ func (this *MTox) addRelay(key string) {
 func (this *MTox) removeRelay(key string) {
 	this.relaysmu.Lock()
 	defer this.relaysmu.Unlock()
+
 	newv := []string{}
 	for _, k := range this.relays {
 		if k == key {
@@ -427,6 +444,7 @@ func (this *MTox) removeRelay(key string) {
 
 type rrPick struct {
 	next int
+	mu   sync.RWMutex
 }
 
 func (this *rrPick) SelectOne(items []string, chkfn func(item string) bool) string {
@@ -434,13 +452,25 @@ func (this *rrPick) SelectOne(items []string, chkfn func(item string) bool) stri
 		return ""
 	}
 	// this.next = 0
+	oldlen := len(items)
+	defer func() {
+		errx := recover()
+		if errx != nil {
+			lines := strings.Split(fmt.Sprintf("%v", errx), "\n")
+			log.Fatalln(lines[0], this.next, len(items), items == nil, oldlen)
+		}
+	}()
 
+	// this.mu.Lock()
+	// defer this.mu.Unlock()
 	for i := 0; i < len(items); i++ {
+		this.mu.Lock()
 		if this.next >= len(items) {
 			this.next = 0
 		}
 		item := items[this.next]
 		this.next++
+		this.mu.Unlock()
 
 		if chkfn != nil {
 			if chkfn(item) {

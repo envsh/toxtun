@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/cyfdecyf/color"
+	deadlock "github.com/sasha-s/go-deadlock"
 )
 
 // TODO 最后一条日志的重复归并，
@@ -169,6 +170,7 @@ type linededuper struct {
 	lastLine  string
 	lastSame  bool
 	sameCount int
+	mu        deadlock.RWMutex
 }
 
 func newlinededuper() *linededuper {
@@ -177,27 +179,68 @@ func newlinededuper() *linededuper {
 	return this
 }
 func (this *linededuper) wrap(line string) string {
-	if line == this.lastLine {
-		if this.sameCount == 0 {
+	if line == this.LastLine() {
+		if this.SameCount() == 0 {
 			fmt.Print(infoLog.Prefix(), time.Now().Format("2006/01/02 15:04:05 "))
 		} else {
 			// fmt.Print(strings.Repeat("\b", this.sameCount-1) + strings.Repeat("+", this.sameCount))
 		}
 		fmt.Print("+")
-		this.sameCount++
-		this.lastSame = true
+		this.IncSameCount()
+		this.SetLastSame(true)
 	} else {
-		if this.lastSame { // 处理换行问题
+		if this.LastSame() { // 处理换行问题
 			fmt.Print("\n")
 			infoLog.Println(line)
 		} else {
 			infoLog.Println(line)
 		}
-		this.sameCount = 0
-		this.lastSame = false
+		this.SetSameCount(0)
+		this.SetLastSame(false)
 	}
-	this.lastLine = line
+	this.SetLastLine(line)
 	return ""
+}
+
+func (this *linededuper) LastLine() string {
+	this.mu.RLock()
+	defer this.mu.RUnlock()
+	return this.lastLine
+}
+func (this *linededuper) SetLastLine(line string) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	this.lastLine = line
+}
+
+func (this *linededuper) LastSame() bool {
+	this.mu.RLock()
+	defer this.mu.RUnlock()
+	return this.lastSame
+}
+func (this *linededuper) SetLastSame(b bool) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	this.lastSame = b
+}
+
+func (this *linededuper) SameCount() int {
+	this.mu.RLock()
+	defer this.mu.RUnlock()
+	return this.sameCount
+}
+func (this *linededuper) IncSameCount() {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	this.sameCount++
+}
+func (this *linededuper) SetSameCount(c int) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	this.sameCount = c
 }
 
 type eLogger struct {
