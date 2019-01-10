@@ -8,6 +8,7 @@ import (
 	"math"
 	"mkuse/rudp"
 	"sync/atomic"
+	"unsafe"
 
 	// "log"
 	"bytes"
@@ -362,6 +363,9 @@ func (this *Tunneld) pollServerReadyRead(ch *Channel) {
 	debug.Println("copying server to client:", ch.chidsrv, ch.chidsrv, ch.conv)
 	// 使用kcp的mtu设置了，这里不再需要限制读取的包大小
 	for {
+		if ch == nil || ch.conn == nil {
+			break
+		}
 		rbuf := make([]byte, rdbufsz)
 		n, err := ch.conn.Read(rbuf)
 		if err != nil {
@@ -421,6 +425,9 @@ func (this *Tunneld) pollClientReadyRead(ch *Channel) {
 			lmter.WaitN(context.Background(), rn)
 		}
 
+		if ch == nil || ch.conn == nil {
+			break
+		}
 		wn, err := ch.conn.Write(rbuf[:rn])
 		gopp.ErrPrint(err, wn)
 		if err != nil {
@@ -570,31 +577,22 @@ func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
 	type segheader struct {
 		conv   uint32
 		cmd    uint8
-		sn     uint32
-		chksum uint32
-		datlen uint32
+		seq    uint32
+		chksum uint16
+		datlen uint16
 		ts     uint32
 	}
 	sego := &segheader{}
-	seg := sego
-	decodeHeader := func(data []byte) error {
-		buf := bytes.NewReader(data)
-		binary.Read(buf, binary.LittleEndian, &seg.conv)
-		binary.Read(buf, binary.LittleEndian, &seg.cmd)
-		binary.Read(buf, binary.LittleEndian, &seg.sn)
-		binary.Read(buf, binary.LittleEndian, &seg.chksum)
-		binary.Read(buf, binary.LittleEndian, &seg.datlen)
-		return nil
-	}
+
 	// kcp包前4字段为conv，little hacky
 	conv := binary.LittleEndian.Uint32(buf)
 	ch := this.chpool.getPool2ById(conv)
 	if ch == nil {
 		// try get sequence no
 		// sego := kcp_parse_segment(buf)
-		decodeHeader(buf)
-		info.Println("channel not found, maybe has some problem, maybe closed", conv, sego.sn, sego.ts, sego.datlen)
-		if sego.sn == 0 {
+		rudp.DecodeSegHeader(buf, (*rudp.SegHeader)(unsafe.Pointer(sego)))
+		info.Println("channel not found, maybe has some problem, maybe closed", conv, sego.seq, sego.ts, sego.datlen)
+		if sego.seq == 0 {
 			evt := &ClientReadyReadEvent{nil, buf, len(buf), false}
 			this.chpool.rcvbuf[conv] = append(this.chpool.rcvbuf[conv], evt)
 		}
@@ -628,8 +626,8 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 		ch.rudp_ = rudp.NewRUDP(ch.conv, func(data []byte, prior bool) error {
 			return this.onKcpOutput2(data, len(data), ch, prior)
 		})
-		// ch.fp, _ = os.OpenFile(fmt.Sprintf("convs%d", ch.conv), os.O_CREATE|os.O_RDWR, 0644)
 
+		// ch.fp, _ = os.OpenFile(fmt.Sprintf("convs%d", ch.conv), os.O_CREATE|os.O_RDWR, 0644)
 		this.chpool.putServer(ch)
 		go this.connectToBackend(ch)
 

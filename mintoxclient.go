@@ -288,7 +288,7 @@ func (this *MTox) sendData(data []byte, ctrl bool, prior bool) error {
 		}
 		gopp.ErrPrint(err)
 		dtime := time.Since(btime)
-		if dtime > 1*time.Millisecond {
+		if dtime > 1000*time.Millisecond {
 			errl.Println(err, len(data), dtime)
 		}
 		if err == nil {

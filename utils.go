@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"hash/crc32"
 	"time"
@@ -90,7 +89,7 @@ func isReservedIpStr(ip string) bool {
 func makeKcpConv(friendId string, remip string, remport string) uint32 {
 	// crc32: toxid+host+port+time
 	data := fmt.Sprintf("%s@%s:%s@%d", friendId, remip, remport, time.Now().UnixNano())
-	conv := crc32.ChecksumIEEE(bytes.NewBufferString(data).Bytes())
+	conv := crc32.ChecksumIEEE([]byte(data))
 	return conv
 }
 
