@@ -18,7 +18,6 @@ import (
 	"github.com/envsh/go-toxcore/mintox"
 	"github.com/kitech/goplusplus"
 	deadlock "github.com/sasha-s/go-deadlock"
-	"github.com/xtaci/smux"
 )
 
 var (
@@ -157,45 +156,27 @@ func nextconvid() uint32 {
 }
 
 func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, tname string) error {
-	tunrec := config.getRecordByName(tname)
-	var stm1 *smux.Stream
-	for {
-		if time.Since(btime) > 15*time.Second {
-			conn.Close()
-			err := fmt.Errorf("mux1 conn timeout", tname, times)
-			return err
-		}
-		err := this.connectmux1(tname)
-		gopp.ErrPrint(err)
-		if err != nil {
-			conn.Close()
-			return err
-		}
-
-		syndat := fmt.Sprintf("%s://%s:%d/%s", tunrec.tproto, tunrec.rhost, tunrec.rport, tunrec.tname)
-		stm, err := this.mux1.OpenStream(syndat)
-		gopp.ErrPrint(err)
-		if err != nil {
-			mux1 := this.mux1
-			this.mux1 = nil
-			mux1.Close()
-			mux1.rudp_.Close()
-			log.Println("stm conn failed, retry", conn.RemoteAddr(), mux1.IsClosed(), err)
-			time.Sleep(3 * time.Second)
-			continue
-		}
-		stm1 = stm
-		break
+	err := this.connectmux1(tname)
+	gopp.ErrPrint(err)
+	if err != nil {
+		conn.Close()
+		return err
 	}
 
 	// server conn
-	go this.serveconn(conn, stm1, tunrec)
+	go this.serveconn(this.mux1, conn, times, btime, tname)
 	return nil
 }
 func (this *Tunnelc) connectmux1(tname string) error {
 	if this.mux1 != nil {
-		// server conn
-		return nil
+		if this.mux1.IsClosed() {
+			mux1 := this.mux1
+			this.mux1 = nil
+			mux1.rudp_.Close()
+			logger.Infoln("mux1 conn is closed, reconnect ...", mux1.conv)
+		} else {
+			return nil
+		}
 	}
 	tunrec := config.getRecordByName(tname)
 	conv := nextconvid()
@@ -210,7 +191,7 @@ func (this *Tunnelc) connectmux1(tname string) error {
 	select {
 	case <-mux1C:
 	case <-time.After(15 * time.Second):
-		err = fmt.Errorf("conn mux1 timeout", conv)
+		err = fmt.Errorf("conn mux1 timeout %d", conv)
 		log.Println("close cli conn", err)
 		return err
 	}
@@ -221,7 +202,25 @@ func (this *Tunnelc) connectmux1(tname string) error {
 	this.mux1 = NewMuxone(conv, writeout)
 	return nil
 }
-func (this *Tunnelc) serveconn(conn net.Conn, stm *smux.Stream, tunrec *TunnelRecord) {
+func (this *Tunnelc) serveconn(mux1 *muxone, conn net.Conn, times int, btime time.Time, tname string) {
+
+	tunrec := config.getRecordByName(tname)
+	btime2 := time.Now()
+	syndat := fmt.Sprintf("%s://%s:%d/%s", tunrec.tproto, tunrec.rhost, tunrec.rport, tunrec.tname)
+	stm, err := mux1.OpenStream(syndat)
+	gopp.ErrPrint(err)
+	if err != nil {
+		if times > 5 {
+			log.Println("stm conn failed timeout", times, conn.RemoteAddr(), mux1.IsClosed(), err)
+			conn.Close()
+			return
+		}
+		log.Println("stm conn failed, retry", times, conn.RemoteAddr(), mux1.IsClosed(), err)
+		time.Sleep(3 * time.Second)
+		this.newConnChan <- NewConnEvent{conn, times + 1, btime, tname}
+		return
+	}
+	log.Println("stm open time", time.Since(btime2))
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -308,7 +307,7 @@ func (this *Tunnelc) handleDataPacket(buf []byte, friendNumber uint32) {
 	conv = binary.LittleEndian.Uint32(buf)
 
 	if this.mux1 == nil {
-		errl.Println("mux1 conn not exist, drop pkt", conv, convid, len(buf))
+		info.Println("mux1 conn not exist, drop pkt", conv, convid)
 		return
 	}
 	this.mux1.rudp_.Input(buf)

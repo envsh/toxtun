@@ -161,7 +161,7 @@ func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
 	// kcp包前4字段为conv，little hacky
 	conv := binary.LittleEndian.Uint32(buf)
 	if this.mux1 == nil {
-		log.Println("mux1 conn not exist, drop pkt", conv)
+		info.Println("mux1 conn not exist, drop pkt", conv)
 		return
 	}
 	err := this.mux1.rudp_.Input(buf)
@@ -206,6 +206,7 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 }
 func (this *Tunneld) acceptconn() {
 	mux1 := this.mux1
+	log.Println("mux1 accept loop start", mux1.conv, mux1.NumStreams())
 	for {
 		stm, err := mux1.AcceptStream()
 		gopp.ErrPrint(err)
