@@ -70,11 +70,14 @@ func newMinTox(name string) *MTox {
 	log.Println("My pubkey?", pubkey.ToHex())
 	this.SelfPubkey, this.SelfSeckey = pubkey, seckey
 
+	return this
+}
+
+func (this *MTox) startup() {
 	this.setupTCPRelays()
 	if tox_bs_group == "auto" {
 		go this.daemonProc()
 	}
-	return this
 }
 
 func (this *MTox) setupTCPRelays() {
@@ -89,6 +92,7 @@ func (this *MTox) setupTCPRelays() {
 		}
 		clinfo.inuse = is_selected_server(pubkey)
 		_ = clinfo
+		clinfo.tcpcli.Startup()
 	}
 	if tox_bs_group != "auto" {
 		tmpsrvs = servers
@@ -161,7 +165,10 @@ func (this *MTox) onTCPClientClosed(tcpcli *mintox.TCPClient) {
 	this.clismu.Unlock()
 	log.Println(lerrorp, "Reconnect after 5 seconds.", ipaddr, pubkey[:20])
 	appcm.Counter(fmt.Sprintf("mintoxc.recontcpc.%s", strings.Split(ipaddr, ":")[0])).Inc(1)
-	time.AfterFunc(5*time.Second, func() { this.connectRelay(ipaddr, pubkey) })
+	time.AfterFunc(5*time.Second, func() {
+		clinfo := this.connectRelay(ipaddr, pubkey)
+		clinfo.tcpcli.Startup()
+	})
 }
 
 // pubkey: to connect friend's

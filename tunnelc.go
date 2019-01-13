@@ -58,6 +58,7 @@ func NewTunnelc() *Tunnelc {
 
 	// callbacks
 	this.mtox.DataFunc = this.onMinToxData
+	this.mtox.startup()
 	//
 	return this
 }

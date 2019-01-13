@@ -48,6 +48,7 @@ func (this *Tunneld) init() {
 
 	// callbacks
 	this.mtox.DataFunc = this.onMinToxData
+	this.mtox.startup()
 	for {
 		select {
 		case evt := <-this.kcpInputChan:
@@ -178,7 +179,7 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 	if pkt.Command == CMDCONNSYN {
 		info.Printf("New mux1 conn on tunnel %s to %s:%s:%s, conv: %d\n",
 			pkt.Tunname, pkt.Tunproto, pkt.Remoteip, pkt.Remoteport, pkt.Conv)
-
+		// close old, ack back, create new
 		if this.mux1 != nil {
 			mux1 := this.mux1
 			this.mux1 = nil
@@ -186,11 +187,6 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 			mux1.Close()
 			mux1.rudp_.Close()
 		}
-		writeout := func(data []byte, prior bool) error {
-			return this.onKcpOutput2(data, len(data), nil, prior)
-		}
-		this.mux1 = NewMuxone(pkt.Conv, writeout)
-		go this.acceptconn()
 
 		repkt := &*pkt
 		repkt.Command = CMDCONNACK
@@ -198,6 +194,13 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 		if err != nil {
 			errl.Println(err)
 		}
+
+		writeout := func(data []byte, prior bool) error {
+			return this.onKcpOutput2(data, len(data), nil, prior)
+		}
+		this.mux1 = NewMuxone(pkt.Conv, writeout)
+		go this.acceptconn()
+
 	} else if pkt.Command == CMDCLOSEFIN {
 		log.Panicln("not used")
 	} else {
