@@ -17,6 +17,7 @@ import (
 	funk "github.com/thoas/go-funk"
 
 	"mkuse/appcm"
+	"mkuse/rudp"
 )
 
 type ClientInfo struct {
@@ -272,11 +273,12 @@ var last_show_sent_speed time.Time
 
 // 一种方式，上层的虚拟连接使用任意的一个连接发送数据
 // 一种方式，上层的虚拟连接初始选择任意一个连接，并固定使用这一个。
-func (this *MTox) sendData(data []byte, ctrl bool, prior bool) error {
+func (this *MTox) sendData(data *rudp.PfxByteArray, ctrl bool, prior bool) error {
 	var err error
 	var spdc *mintox.SpeedCalc
 	var tcpcli *mintox.TCPClient
-	data = append(gopp.IfElse(ctrl, TCP_PACKET_TUNCTRL, TCP_PACKET_TUNDATA).([]byte), data...)
+	data.PPBytes(gopp.IfElse(ctrl, TCP_PACKET_TUNCTRL, TCP_PACKET_TUNDATA).([]byte))
+	// data = append(gopp.IfElse(ctrl, TCP_PACKET_TUNCTRL, TCP_PACKET_TUNDATA).([]byte), data...)
 	rlycnt := len(this.relays)
 	if rlycnt == 0 {
 		// this.calcPriority()
@@ -296,19 +298,19 @@ func (this *MTox) sendData(data []byte, ctrl bool, prior bool) error {
 		gopp.ErrPrint(err)
 		dtime := time.Since(btime)
 		if dtime > 1000*time.Millisecond {
-			errl.Println(err, len(data), dtime)
+			errl.Println(err, data.FullLen(), dtime)
 		}
 		if err == nil {
 			appcm.Meter("mintoxc.sent.cnt.total").Mark(1)
-			appcm.Meter("mintoxc.sent.len.total").Mark(int64(len(data)))
-			this.spdca.Data(len(data))
+			appcm.Meter("mintoxc.sent.len.total").Mark(int64(data.FullLen()))
+			this.spdca.Data(data.FullLen())
 			if false && int(time.Since(last_show_sent_speed).Seconds()) > 3 {
 				last_show_sent_speed = time.Now()
 				if spdc != nil {
 					log.Printf("--- sent speed: %d/%d, len: %d/%d, %s\n",
-						this.spdca.Avgspd, spdc.Avgspd, spdc.Totlen, len(data), tcpcli.ServAddr)
+						this.spdca.Avgspd, spdc.Avgspd, spdc.Totlen, data.FullLen(), tcpcli.ServAddr)
 				} else {
-					log.Printf("--- sent speed: %d, len: %d\n", this.spdca.Avgspd, len(data))
+					log.Printf("--- sent speed: %d, len: %d\n", this.spdca.Avgspd, data.FullLen())
 				}
 			}
 		}
@@ -326,7 +328,7 @@ func (this *MTox) sendData(data []byte, ctrl bool, prior bool) error {
 
 var sendto = ""
 
-func (this *MTox) sendDataImpl(data []byte, prior bool) (*mintox.TCPClient, *mintox.SpeedCalc, error) {
+func (this *MTox) sendDataImpl(data *rudp.PfxByteArray, prior bool) (*mintox.TCPClient, *mintox.SpeedCalc, error) {
 	var connid uint8
 
 	itemid := this.selectRelay()
@@ -363,7 +365,7 @@ func (this *MTox) sendDataImpl(data []byte, prior bool) (*mintox.TCPClient, *min
 		// sendto = tcpcli.ServAddr
 	}
 	var err error
-	_, err = tcpcli.SendDataPacket(connid, data, prior)
+	_, err = tcpcli.SendDataPacket(connid, data.FullData(), prior)
 	gopp.ErrPrint(err)
 	if err != nil {
 		// return tcpcli, spdc, err
@@ -371,9 +373,9 @@ func (this *MTox) sendDataImpl(data []byte, prior bool) (*mintox.TCPClient, *min
 
 	srvip := strings.Split(tcpcli.ServAddr, ":")[0]
 	if err == nil {
-		spdc.Data(len(data))
+		spdc.Data(data.FullLen())
 		appcm.Meter(fmt.Sprintf("mintoxc.sent.cnt.%s", srvip)).Mark(1)
-		appcm.Meter(fmt.Sprintf("mintoxc.sent.len.%s", srvip)).Mark(int64(len(data)))
+		appcm.Meter(fmt.Sprintf("mintoxc.sent.len.%s", srvip)).Mark(int64(data.FullLen()))
 		// clinfo.spditm.LastUseTime = time.Now()
 	}
 	// sentcntm1 := appcm.Meter(fmt.Sprintf("mintoxc.sent.cnt.%s", srvip))

@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"mkuse/rudp"
 	"net/url"
 	"sync"
 
@@ -63,18 +64,19 @@ func (this *Tunneld) serve() {
 
 ///////////
 
-func (this *Tunneld) onKcpOutput2(buf []byte, size int, extra interface{}, prior bool) error {
+func (this *Tunneld) onKcpOutput2(buf *rudp.PfxByteArray, extra interface{}, prior bool) error {
+	size := buf.FullLen()
 	if size <= 0 {
 		// 如果总是出现，并且不影响程序运行，那么也就不是bug了
 		// info.Println("wtf")
 		return fmt.Errorf("Invalid size %d", size)
 	}
-	debug.Println(len(buf), "//", size, "//", string(gopp.SubBytes(buf, 52)))
+	debug.Println(size, "//", size, "//", string(gopp.SubBytes(buf.RawData(), 52)))
 	// ch := extra.(*Channel)
 
 	var sndlen int = size
 	var err error
-	err = this.mtox.sendData(buf[:size], false, prior)
+	err = this.mtox.sendData(buf, false, prior)
 	if err != nil {
 		debug.Println(err)
 	} else {
@@ -83,8 +85,8 @@ func (this *Tunneld) onKcpOutput2(buf []byte, size int, extra interface{}, prior
 	return err
 }
 
-func (this *Tunneld) onKcpOutput(buf []byte, size int, extra interface{}) {
-	this.onKcpOutput2(buf, size, extra, false)
+func (this *Tunneld) onKcpOutput(buf *rudp.PfxByteArray, extra interface{}) {
+	this.onKcpOutput2(buf, extra, false)
 }
 
 // should block
@@ -190,13 +192,16 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 
 		repkt := &*pkt
 		repkt.Command = CMDCONNACK
-		err := this.mtox.sendData(repkt.toJson(), true, true)
+		pktdat := repkt.toJson()
+		pba := rudp.NewPfxByteArray(len(pktdat))
+		pba.Copy(pktdat)
+		err := this.mtox.sendData(pba, true, true)
 		if err != nil {
 			errl.Println(err)
 		}
 
-		writeout := func(data []byte, prior bool) error {
-			return this.onKcpOutput2(data, len(data), nil, prior)
+		writeout := func(data *rudp.PfxByteArray, prior bool) error {
+			return this.onKcpOutput2(data, nil, prior)
 		}
 		this.mux1 = NewMuxone(pkt.Conv, writeout)
 		go this.acceptconn()

@@ -12,11 +12,11 @@ type muxone struct {
 	rudp_ *rudp.RUDP
 
 	conv     uint32 // auto increment when reconnect
-	writeout func(data []byte, prior bool) error
+	writeout func(data *rudp.PfxByteArray, prior bool) error
 }
 
 /////
-func NewMuxone(conv uint32, writeout func(data []byte, prior bool) error) *muxone {
+func NewMuxone(conv uint32, writeout func(data *rudp.PfxByteArray, prior bool) error) *muxone {
 	this := &muxone{}
 	this.conv = conv
 	this.writeout = writeout
@@ -29,8 +29,8 @@ func (this *muxone) reset() {
 	this.rudp_ = rudp.NewRUDP(this.conv, this.writeout)
 	cfg := &smux.Config{}
 	cfg = smux.DefaultConfig()
-	cfg.KeepAliveInterval *= 2
-	cfg.KeepAliveTimeout *= 2
+	cfg.KeepAliveInterval *= 3
+	cfg.KeepAliveTimeout *= 3
 	sess, err := smux.Server(this.rudp_, nil)
 	gopp.ErrPrint(err)
 	this.Session = sess

@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"mkuse/rudp"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -186,7 +187,10 @@ func (this *Tunnelc) connectmux1(tname string) error {
 	pkt.Tunname = tunrec.tname
 	pkt.Remoteip = tunrec.rhost
 	pkt.Remoteport = gopp.ToStr(tunrec.rport)
-	err := this.mtox.sendData(pkt.toJson(), true, true)
+	pktdat := pkt.toJson()
+	pba := rudp.NewPfxByteArray(len(pktdat))
+	pba.Copy(pktdat)
+	err := this.mtox.sendData(pba, true, true)
 	gopp.ErrPrint(err, conv)
 
 	select {
@@ -197,8 +201,8 @@ func (this *Tunnelc) connectmux1(tname string) error {
 		return err
 	}
 
-	writeout := func(data []byte, prior bool) error {
-		return this.onKcpOutput2(data, len(data), nil, prior)
+	writeout := func(data *rudp.PfxByteArray, prior bool) error {
+		return this.onKcpOutput2(data, nil, prior)
 	}
 	this.mux1 = NewMuxone(conv, writeout)
 	return nil
@@ -249,7 +253,8 @@ func (this *Tunnelc) serveconn(mux1 *muxone, conn net.Conn, times int, btime tim
 	return
 }
 
-func (this *Tunnelc) onKcpOutput2(buf []byte, size int, extra interface{}, prior bool) error {
+func (this *Tunnelc) onKcpOutput2(buf *rudp.PfxByteArray, extra interface{}, prior bool) error {
+	size := buf.FullLen()
 	if size <= 0 {
 		// 如果总是出现，并且不影响程序运行，那么也就不是bug了
 		return fmt.Errorf("invalid size %d", size)
@@ -260,7 +265,7 @@ func (this *Tunnelc) onKcpOutput2(buf []byte, size int, extra interface{}, prior
 
 	var sndlen int = size
 	var err error
-	err = this.mtox.sendData(buf[:size], false, prior)
+	err = this.mtox.sendData(buf, false, prior)
 	if err != nil {
 		debug.Println(err)
 	} else {
@@ -269,8 +274,8 @@ func (this *Tunnelc) onKcpOutput2(buf []byte, size int, extra interface{}, prior
 	return err
 }
 
-func (this *Tunnelc) onKcpOutput(buf []byte, size int, extra interface{}) {
-	this.onKcpOutput2(buf, size, extra, false)
+func (this *Tunnelc) onKcpOutput(buf *rudp.PfxByteArray, extra interface{}) {
+	this.onKcpOutput2(buf, extra, false)
 }
 
 // TODO 应该把数据发送到chan进入主循环再回来处理，就不会有concurrent问题
@@ -308,7 +313,7 @@ func (this *Tunnelc) handleDataPacket(buf []byte, friendNumber uint32) {
 	conv = binary.LittleEndian.Uint32(buf)
 
 	if this.mux1 == nil {
-		info.Println("mux1 conn not exist, drop pkt", conv, convid)
+		info.Println("mux1 conn not exist, drop pkt", conv)
 		return
 	}
 	this.mux1.rudp_.Input(buf)
