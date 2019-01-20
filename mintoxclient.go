@@ -122,8 +122,8 @@ func (this *MTox) connectRelay(ipaddr, pubkey string) *ClientInfo {
 	tcpcli.RoutingDataFunc = this.onRoutingData
 	tcpcli.RoutingDataCbdata = tcpcli
 	tcpcli.OnConfirmed = func() {
-		log.Println(ldebugp, "adding friendpk", this.friendpks[:20], ipaddr)
 		if this.friendpks != "" {
+			log.Println(ldebugp, "adding friendpk", this.friendpks[:20], ipaddr)
 			err := tcpcli.ConnectPeer(this.friendpks)
 			gopp.ErrPrint(err, lerrorp)
 		}
@@ -164,9 +164,9 @@ func (this *MTox) onTCPClientClosed(tcpcli *mintox.TCPClient) {
 		delete(this.clis, pubkeyb)
 	}
 	this.clismu.Unlock()
-	log.Println(lerrorp, "Reconnect after 5 seconds.", ipaddr, pubkey[:20])
+	log.Println(lerrorp, "Reconnect after 8 seconds.", ipaddr, pubkey[:20])
 	appcm.Counter(fmt.Sprintf("mintoxc.recontcpc.%s", strings.Split(ipaddr, ":")[0])).Inc(1)
-	time.AfterFunc(5*time.Second, func() {
+	time.AfterFunc(8*time.Second, func() {
 		clinfo := this.connectRelay(ipaddr, pubkey)
 		clinfo.tcpcli.Startup()
 	})
@@ -233,7 +233,7 @@ func (this *MTox) onRoutingData(object mintox.Object, number uint32, connid uint
 		spditm.RoundTripTime = spditm.RoundTripTime*2/10 + int(time.Since(spditm.LastPingTime).Seconds()*1000)*8/10
 		spditm.mtRTT.Mark(int64(spditm.RoundTripTime))
 	} else {
-		log.Panicln("wtf", connid, len(data), tcpcli.ServAddr, string(data[:7]))
+		log.Panicln("wtf", connid, len(data), tcpcli.ServAddr, string(data[:8]), data[:8])
 	}
 	appcm.Meter("mintoxc.recv.cnt.total").Mark(1)
 	appcm.Meter("mintoxc.recv.len.total").Mark(int64(len(data)))
@@ -342,8 +342,10 @@ func (this *MTox) sendDataImpl(data *rudp.PfxByteArray, prior bool) (*mintox.TCP
 	var spdc *mintox.SpeedCalc
 	this.clismu.RLock()
 	clinfo, ok0 := this.clis[itemid]
-	tcpcli = clinfo.tcpcli
-	spdc = clinfo.spdc
+	if ok0 {
+		tcpcli = clinfo.tcpcli
+		spdc = clinfo.spdc
+	}
 	this.clismu.RUnlock()
 	if !ok0 {
 		log.Println(lwarningp, fmt.Errorf("cli not found"))
