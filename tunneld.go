@@ -122,12 +122,18 @@ func (this *Tunneld) connectToBackend(stm *smux.Stream) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	// client close first
+	clicloseC := make(chan bool, 0)
 	// srv -> net
 	go func() {
 		wn, err := io.Copy(stm, conn)
 		gopp.ErrPrint(err, wn)
 		wg.Done()
-		stm.Close()
+		select {
+		case <-clicloseC:
+		case <-time.After(30 * time.Second):
+			stm.Close()
+		}
 	}()
 
 	// net -> srv
@@ -136,6 +142,7 @@ func (this *Tunneld) connectToBackend(stm *smux.Stream) {
 		gopp.ErrPrint(err, wn)
 		wg.Done()
 		conn.Close()
+		clicloseC <- true
 	}()
 
 	wg.Wait()
@@ -187,7 +194,6 @@ func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 			this.mux1 = nil
 			info.Println("mux1 conn exist, renew", mux1.conv, "->", pkt.Conv)
 			mux1.Close()
-			mux1.rudp_.Close()
 		}
 
 		repkt := &*pkt
@@ -225,6 +231,8 @@ func (this *Tunneld) acceptconn() {
 		go this.connectToBackend(stm)
 	}
 	log.Println("mux1 accept loop done", mux1.conv, mux1.NumStreams())
+	this.mux1 = nil
+	mux1.Close()
 }
 
 // a tool function

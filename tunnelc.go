@@ -19,6 +19,7 @@ import (
 	"github.com/envsh/go-toxcore/mintox"
 	"github.com/kitech/goplusplus"
 	deadlock "github.com/sasha-s/go-deadlock"
+	"github.com/xtaci/smux"
 )
 
 var (
@@ -48,7 +49,10 @@ type Tunnelc struct {
 
 	mux1 *muxone
 
-	newConnChan chan NewConnEvent
+	newConnC      chan NewConnEvent
+	muxConnedC    chan bool
+	muxDisconnedC chan bool
+	newconnq      []NewConnEvent // 连接阶段暂存连接请求
 }
 
 func NewTunnelc() *Tunnelc {
@@ -68,15 +72,21 @@ func (this *Tunnelc) serve() {
 	// recs := config.recs
 	this.listenTunnels()
 
-	this.newConnChan = make(chan NewConnEvent, mpcsz)
+	this.newConnC = make(chan NewConnEvent, mpcsz)
+	this.muxConnedC = make(chan bool, 1)
+	this.muxDisconnedC = make(chan bool, 1)
 
 	this.serveTunnels()
 
 	// like event handler
 	for {
 		select {
-		case evt := <-this.newConnChan:
-			this.initConnChannel(evt.conn, evt.times, evt.btime, evt.tname)
+		case evt := <-this.newConnC:
+			this.muxConnHandler("newconn", evt)
+		case <-this.muxConnedC:
+			this.muxConnHandler("muxconned", NewConnEvent{})
+		case <-this.muxDisconnedC:
+			this.muxConnHandler("muxdisconned", NewConnEvent{})
 		}
 	}
 }
@@ -128,8 +138,8 @@ func (this *Tunnelc) serveTunnel(tname string, srv net.Listener) {
 			info.Println(err)
 		}
 		// info.Println(c)
-		info.Println("New connection from/to:", c.RemoteAddr(), c.LocalAddr(), tname)
-		this.newConnChan <- NewConnEvent{c, 0, time.Now(), tname}
+		info.Println("New conn :", c.RemoteAddr(), "->", c.LocalAddr(), tname)
+		this.newConnC <- NewConnEvent{c, 0, time.Now(), tname}
 		appevt.Trigger("newconn", tname)
 	}
 }
@@ -143,8 +153,8 @@ func (this *Tunnelc) serveTunnelUdp(tname string, srv net.Listener) {
 			info.Println(err)
 		}
 		// info.Println(c)
-		info.Println("New connection from/to:", c.RemoteAddr(), c.LocalAddr(), tname)
-		this.newConnChan <- NewConnEvent{c, 0, time.Now(), tname}
+		info.Println("New conn :", c.RemoteAddr(), "->", c.LocalAddr(), tname)
+		this.newConnC <- NewConnEvent{c, 0, time.Now(), tname}
 		appevt.Trigger("newconn", tname)
 	}
 }
@@ -157,29 +167,51 @@ func nextconvid() uint32 {
 	return atomic.AddUint32(&convid, 1)
 }
 
-func (this *Tunnelc) initConnChannel(conn net.Conn, times int, btime time.Time, tname string) error {
-	err := this.connectmux1(tname)
-	gopp.ErrPrint(err)
-	if err != nil {
-		conn.Close()
-		return err
-	}
-
-	// server conn
-	go this.serveconn(this.mux1, conn, times, btime, tname)
-	return nil
-}
-func (this *Tunnelc) connectmux1(tname string) error {
-	if this.mux1 != nil {
-		if this.mux1.IsClosed() {
+// should not block
+func (this *Tunnelc) muxConnHandler(evtname string, evt NewConnEvent) {
+	switch evtname {
+	case "newconn":
+		if this.mux1 == nil || (this.mux1 != nil && this.mux1.IsClosed()) {
 			mux1 := this.mux1
 			this.mux1 = nil
-			mux1.rudp_.Close()
-			logger.Infoln("mux1 conn is closed, reconnect ...", mux1.conv)
+			if mux1 != nil {
+				mux1.Close()
+				logger.Infoln("mux1 conn is closed, reconnect ...", mux1.conv)
+			}
+
+			this.newconnq = append(this.newconnq, evt)
+			go this.connectmux1(evt.tname)
 		} else {
-			return nil
+			// server conn
+			go this.serveconnevt(this.mux1, evt)
 		}
+
+	case "muxconned":
+		info.Println("muxconned")
+		for _, evt_ := range this.newconnq {
+			evt := evt_
+			// server conn
+			go this.serveconnevt(this.mux1, evt)
+		}
+		this.newconnq = nil
+	case "muxdisconned":
+	default:
+		log.Panicln("unknown evtname", evtname)
 	}
+}
+
+func (this *Tunnelc) connectmux1(tname string) error {
+	for retry := 0; retry < 3; retry++ {
+		err := this.connectmux1impl(tname, retry)
+		if err == nil {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+	return nil
+}
+func (this *Tunnelc) connectmux1impl(tname string, retry int) error {
+	info.Println("mux conning ...", retry)
 	tunrec := config.getRecordByName(tname)
 	conv := nextconvid()
 	pkt := NewBrokenPacket(conv)
@@ -193,11 +225,12 @@ func (this *Tunnelc) connectmux1(tname string) error {
 	err := this.mtox.sendData(pba, true, true)
 	gopp.ErrPrint(err, conv)
 
+	info.Println("wait conned ...", retry)
 	select {
 	case <-mux1C:
-	case <-time.After(15 * time.Second):
-		err = fmt.Errorf("conn mux1 timeout %d", conv)
-		log.Println("close cli conn", err)
+	case <-time.After(10 * time.Second):
+		err = fmt.Errorf("mux1 conn timeout %d", conv)
+		log.Println("close cli conn", retry, err)
 		return err
 	}
 
@@ -205,27 +238,57 @@ func (this *Tunnelc) connectmux1(tname string) error {
 		return this.onKcpOutput2(data, nil, prior)
 	}
 	this.mux1 = NewMuxone(conv, writeout)
+	this.muxConnedC <- true
 	return nil
 }
+func (this *Tunnelc) serveconnevt(mux1 *muxone, evt NewConnEvent) {
+	// server conn
+	conn := evt.conn
+	times := evt.times
+	btime := evt.btime
+	tname := evt.tname
+	this.serveconn(this.mux1, conn, times, btime, tname)
+}
 func (this *Tunnelc) serveconn(mux1 *muxone, conn net.Conn, times int, btime time.Time, tname string) {
-
+	info.Println("serving conn ...", tname)
 	tunrec := config.getRecordByName(tname)
 	btime2 := time.Now()
 	syndat := fmt.Sprintf("%s://%s:%d/%s", tunrec.tproto, tunrec.rhost, tunrec.rport, tunrec.tname)
-	stm, err := mux1.OpenStream(syndat)
+
+	var stm *smux.Stream
+	var err error
+	stmC := make(chan bool, 0)
+	go func() {
+		stm_, err_ := mux1.OpenStream(syndat)
+		if err == nil {
+			select {
+			case stmC <- true:
+				stm = stm_
+				err = err_
+			default:
+				stm_.Close()
+			}
+		}
+	}()
+	select {
+	case <-stmC:
+	case <-time.After(5 * time.Second):
+		err = fmt.Errorf("open steam timeout")
+	}
 	gopp.ErrPrint(err)
 	if err != nil {
-		if times > 5 {
+		if times >= 5 {
 			log.Println("stm conn failed timeout", times, conn.RemoteAddr(), mux1.IsClosed(), err)
 			conn.Close()
+			mux1.Close()
 			return
 		}
 		log.Println("stm conn failed, retry", times, conn.RemoteAddr(), mux1.IsClosed(), err)
 		time.Sleep(3 * time.Second)
-		this.newConnChan <- NewConnEvent{conn, times + 1, btime, tname}
+		this.newConnC <- NewConnEvent{conn, times + 1, btime, tname}
 		return
 	}
-	log.Println("stm open time", time.Since(btime2))
+	log.Println("stm open time", stm.ID(), time.Since(btime2))
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -234,16 +297,26 @@ func (this *Tunnelc) serveconn(mux1 *muxone, conn net.Conn, times int, btime tim
 	go func() {
 		wn, err := io.Copy(stm, conn)
 		gopp.ErrPrint(err, stm.ID(), wn)
+		info.Println("conn cli -> net done ", stm.ID())
 		wg.Done()
 		stm.Close()
+		/*
+			2019/01/23 21:13:05.354989 tunnelc.go:236: read tcp 127.0.0.1:8113->127.0.0.1:50844: use of closed network connection 8 13987221
+			2019/01/23 21:13:05.355019 tunnelc.go:252: done cli conn 8 127.0.0.1:50844
+		*/
 	}()
 
 	// net -> cli
 	go func() {
 		wn, err := io.Copy(conn, stm)
 		gopp.ErrPrint(err, stm.ID(), wn)
+		info.Println("conn net -> cli done ", stm.ID())
 		wg.Done()
-		conn.Close()
+
+		select {
+		case <-time.After(10 * time.Second):
+			conn.Close()
+		}
 	}()
 
 	wg.Wait()

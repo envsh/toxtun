@@ -26,7 +26,6 @@ type ClientInfo struct {
 	status uint8 // always connid=16 here
 	inuse  bool
 	spdc   *mintox.SpeedCalc
-	spditm *SpeedItem
 }
 
 type MTox struct {
@@ -76,9 +75,6 @@ func newMinTox(name string) *MTox {
 
 func (this *MTox) startup() {
 	this.setupTCPRelays()
-	if tox_bs_group == "auto" {
-		go this.daemonProc()
-	}
 }
 
 func (this *MTox) setupTCPRelays() {
@@ -112,7 +108,6 @@ func (this *MTox) connectRelay(ipaddr, pubkey string) *ClientInfo {
 	clinfo := &ClientInfo{}
 	serv_pubkey := mintox.NewCryptoKeyFromHex(pubkey)
 	clinfo.spdc = mintox.NewSpeedCalc()
-	clinfo.spditm = newSpeedItem(serv_pubkey.BinStr(), ipaddr, this.mtreg)
 	tcpcli := mintox.NewTCPClient(ipaddr, serv_pubkey, this.SelfPubkey, this.SelfSeckey)
 
 	tcpcli.RoutingResponseFunc = this.onRoutingResponse
@@ -131,7 +126,6 @@ func (this *MTox) connectRelay(ipaddr, pubkey string) *ClientInfo {
 	tcpcli.OnClosed = this.onTCPClientClosed
 	tcpcli.OnNetRecv = func(n int) { appcm.Meter("tcpnet.recv.len.total").Mark(int64(n)) }
 	tcpcli.OnNetSent = func(n int) { appcm.Meter("tcpnet.sent.len.total").Mark(int64(n)) }
-	tcpcli.OnReservedData = this.onReservedData
 
 	clinfo.tcpcli = tcpcli
 	this.clismu.Lock()
@@ -192,7 +186,6 @@ func (this *MTox) onRoutingStatus(object mintox.Object, number uint32, connid ui
 	this.clis[tcpcli.ServPubkey.BinStr()].status = status
 	this.clis[tcpcli.ServPubkey.BinStr()].connid = connid
 	if status == 2 {
-		this.sendRTTPing(tcpcli.ServPubkey.BinStr(), this.clis[tcpcli.ServPubkey.BinStr()])
 	} else if status < 2 {
 		// delete(this.conns[tcpcli.ServPubkey.BinStr()], connid)
 	}
@@ -203,11 +196,18 @@ func (this *MTox) onRoutingStatus(object mintox.Object, number uint32, connid ui
 		// err := tcpcli.Close()
 		// gopp.ErrPrint(err)
 		if this.friendpks != "" {
-			err := tcpcli.ConnectPeer(this.friendpks)
-			gopp.ErrPrint(err)
+			// 好像会导致对方不重启进程无法再次收到连接通知
+			// err := tcpcli.ConnectPeer(this.friendpks)
+			// gopp.ErrPrint(err)
+			log.Println(linfop, "reconnect peer?", this.friendpks[:20])
 		}
 	}
 }
+
+var (
+	TCP_PACKET_TUNCTRL = []byte("TUNCTRL")
+	TCP_PACKET_TUNDATA = []byte("TUNDATA")
+)
 
 func (this *MTox) onRoutingData(object mintox.Object, number uint32, connid uint8, data []byte, cbdata mintox.Object) {
 	tcpcli := object.(*mintox.TCPClient)
@@ -218,20 +218,6 @@ func (this *MTox) onRoutingData(object mintox.Object, number uint32, connid uint
 		this.DataFunc(data[len(TCP_PACKET_TUNDATA):], cbdata, false)
 	} else if bytes.HasPrefix(data, TCP_PACKET_TUNCTRL) {
 		this.DataFunc(data[len(TCP_PACKET_TUNCTRL):], cbdata, true)
-	} else if bytes.HasPrefix(data, TCP_PACKET_BBTREQU) {
-		this.sendBBTResp(tcpcli, data)
-	} else if bytes.HasPrefix(data, TCP_PACKET_BBTRESP) {
-		this.handleBBTResponse(tcpcli, data)
-	} else if bytes.HasPrefix(data, TCP_PACKET_RTTPING) {
-		this.sendRTTPong("", tcpcli, data)
-	} else if bytes.HasPrefix(data, TCP_PACKET_RTTPONG) {
-		this.clismu.Lock()
-		spditm := this.clis[tcpcli.ServPubkey.BinStr()].spditm
-		this.clismu.Unlock()
-		// log.Println("rttpong:", time.Since(spditm.LastPingTime))
-		spditm.RoundTripTime = (spditm.RoundTripTime + int(time.Since(spditm.LastPingTime).Seconds()*1000)) / 2
-		spditm.RoundTripTime = spditm.RoundTripTime*2/10 + int(time.Since(spditm.LastPingTime).Seconds()*1000)*8/10
-		spditm.mtRTT.Mark(int64(spditm.RoundTripTime))
 	} else {
 		log.Panicln("wtf", connid, len(data), tcpcli.ServAddr, string(data[:8]), data[:8])
 	}
@@ -242,12 +228,7 @@ func (this *MTox) onRoutingData(object mintox.Object, number uint32, connid uint
 	this.clismu.Lock()
 	clinfo := this.clis[tcpcli.ServPubkey.BinStr()]
 	if clinfo.inuse {
-		// meanspd := int(appcm.Meter("mintoxc.recv.len.total").Rate1())
-		// clinfo.spditm.BottleneckBandwidth = gopp.IfElseInt(meanspd > clinfo.spditm.BottleneckBandwidth/2,
-		//	meanspd, clinfo.spditm.BottleneckBandwidth)
-		// clinfo.spditm.BottleneckBandwidth = meanspd
 		if bytes.HasPrefix(data, TCP_PACKET_TUNDATA) || bytes.HasPrefix(data, TCP_PACKET_TUNCTRL) {
-			// clinfo.spditm.LastUseTime = time.Now()
 		}
 	}
 	this.clismu.Unlock()
@@ -378,7 +359,6 @@ func (this *MTox) sendDataImpl(data *rudp.PfxByteArray, prior bool) (*mintox.TCP
 		spdc.Data(data.FullLen())
 		appcm.Meter(fmt.Sprintf("mintoxc.sent.cnt.%s", srvip)).Mark(1)
 		appcm.Meter(fmt.Sprintf("mintoxc.sent.len.%s", srvip)).Mark(int64(data.FullLen()))
-		// clinfo.spditm.LastUseTime = time.Now()
 	}
 	// sentcntm1 := appcm.Meter(fmt.Sprintf("mintoxc.sent.cnt.%s", srvip))
 	sentlenm1 := appcm.Meter(fmt.Sprintf("mintoxc.sent.len.%s", srvip))
@@ -391,15 +371,9 @@ func (this *MTox) sendDataImpl(data *rudp.PfxByteArray, prior bool) (*mintox.TCP
 			len(data), sentlenm1.Rate1(), timc.Count1(sentcntname), srvip)
 	*/
 	if timc.Count1(sentcntname) > 300 && int(sentlenm1.Rate1()) > 500 { // 最近频繁使用，则认为速度可靠
-		// log.Println("save real use speed as test speed:", clinfo.spditm.BottleneckBandwidth, "=>", int(sentlenm1.Rate1()))
-		// clinfo.spditm.BottleneckBandwidth = int(sentlenm1.Rate1())
 	}
 	if err == nil {
 		if int(sentlenm1.Rate1()) > 0 {
-			// log.Println(clinfo.spditm.BottleneckBandwidth, int(sentlenm1.Rate1()), sentcntm1.Count(), srvip)
-			// TODO BottleneckBandwidth r/w race
-			// hmspdval := calchmval(float64(clinfo.spditm.BottleneckBandwidth), sentlenm1.Rate1(), float64(sentcntm1.Count()))
-			// clinfo.spditm.BottleneckBandwidth = int(hmspdval)
 		}
 	}
 	return tcpcli, spdc, err
@@ -407,9 +381,6 @@ func (this *MTox) sendDataImpl(data *rudp.PfxByteArray, prior bool) (*mintox.TCP
 
 // go's map is not very random, so use a rrPick to keep exact fair
 func (this *MTox) selectRelay() string {
-	if len(this.relays) == 0 {
-		this.calcPriority()
-	}
 	if len(this.relays) < 3 {
 		// log.Println("not enough candidate relays:", this.relays)
 	}

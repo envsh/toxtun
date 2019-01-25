@@ -28,12 +28,17 @@ func NewMuxone(conv uint32, writeout func(data *rudp.PfxByteArray, prior bool) e
 func (this *muxone) reset() {
 	this.rudp_ = rudp.NewRUDP(this.conv, this.writeout)
 	cfg := &smux.Config{}
-	cfg = smux.DefaultConfig()
-	cfg.KeepAliveInterval *= 3
-	cfg.KeepAliveTimeout *= 3
-	sess, err := smux.Server(this.rudp_, nil)
+	cfg = &*smux.DefaultConfig()
+	cfg.KeepAliveInterval *= 2
+	cfg.KeepAliveTimeout *= 2
+	sess, err := smux.Server(this.rudp_, cfg)
 	gopp.ErrPrint(err)
 	this.Session = sess
 
 	this.OpenStream("hehhehe")
+}
+
+func (this *muxone) Close() {
+	this.Session.Close()
+	this.rudp_.Close()
 }
