@@ -17,7 +17,7 @@ import (
 	funk "github.com/thoas/go-funk"
 
 	"mkuse/appcm"
-	"mkuse/rudp"
+	rudp "mkuse/rudp2"
 )
 
 type ClientInfo struct {

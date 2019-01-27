@@ -1,23 +1,22 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
-	"mkuse/rudp"
+	"net"
 	"net/url"
 	"sync"
-
-	// "log"
-	"bytes"
-	"encoding/binary"
-	"net"
 	"time"
 
 	"github.com/envsh/go-toxcore/mintox"
 	"github.com/kitech/goplusplus"
 	"github.com/xtaci/smux"
+
+	rudp "mkuse/rudp2"
 )
 
 type Tunneld struct {

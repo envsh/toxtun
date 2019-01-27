@@ -2,9 +2,10 @@ package main
 
 import (
 	"gopp"
-	"mkuse/rudp"
 
 	"github.com/xtaci/smux"
+
+	rudp "mkuse/rudp2"
 )
 
 type muxone struct {

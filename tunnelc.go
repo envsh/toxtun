@@ -1,25 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"math"
 	"math/rand"
-	"mkuse/rudp"
 	"net"
 	"sync"
 	"sync/atomic"
-
-	// "strings"
-	"bytes"
 	"time"
 
 	"github.com/envsh/go-toxcore/mintox"
 	"github.com/kitech/goplusplus"
 	deadlock "github.com/sasha-s/go-deadlock"
 	"github.com/xtaci/smux"
+
+	rudp "mkuse/rudp2"
 )
 
 var (
