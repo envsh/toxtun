@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/envsh/go-toxcore/mintox"
 	"github.com/kitech/goplusplus"
-	"github.com/xtaci/smux"
 
 	rudp "mkuse/rudp2"
 )
@@ -22,7 +20,9 @@ import (
 type Tunneld struct {
 	mtox *MTox
 
-	mux1 *muxone
+	// mux1     *muxone
+	mtvtp    *rudp.Vtpconn
+	muxlsner MuxListener
 
 	kcpInputChan chan ClientReadyReadEvent
 }
@@ -49,6 +49,18 @@ func (this *Tunneld) init() {
 	// callbacks
 	this.mtox.DataFunc = this.onMinToxData
 	this.mtox.startup()
+
+	writeout := func(buf []byte) error {
+		data := rudp.PfxBuffp().Get()
+		data.Copy(buf)
+		defer rudp.PfxBuffp().Put(data)
+		prior := false
+		return this.onKcpOutput2(data, nil, prior)
+	}
+	this.mtvtp = rudp.NewVtpconn(writeout)
+	this.muxlsner = RudpListen(this.mtvtp)
+	go this.serve()
+
 	for {
 		select {
 		case evt := <-this.kcpInputChan:
@@ -59,6 +71,29 @@ func (this *Tunneld) init() {
 
 func (this *Tunneld) serve() {
 	// like event handler
+	for {
+		sess, err := this.muxlsner.Accept()
+		gopp.ErrPrint(err)
+		if err != nil {
+			break
+		}
+
+		go this.servesess(sess)
+	}
+	log.Println("lsner done")
+}
+
+func (this *Tunneld) servesess(sess MuxSession) {
+	for {
+		stm, err := sess.AcceptStream()
+		gopp.ErrPrint(err)
+		if err != nil {
+			break
+		}
+
+		go this.connectToBackend(stm)
+	}
+	log.Println("sess released")
 }
 
 ///////////
@@ -89,7 +124,7 @@ func (this *Tunneld) onKcpOutput(buf *rudp.PfxByteArray, extra interface{}) {
 }
 
 // should block
-func (this *Tunneld) connectToBackend(stm *smux.Stream) {
+func (this *Tunneld) connectToBackend(stm MuxStream) {
 	// Dial
 	var conn net.Conn
 	var err error
@@ -106,16 +141,16 @@ func (this *Tunneld) connectToBackend(stm *smux.Stream) {
 	}
 
 	if err != nil {
-		errl.Println(err, stm.ID(), stm.Syndat())
+		errl.Println(err, stm.StreamID(), stm.Syndat())
 		// 连接结束
-		debug.Println("dial failed, cleaning up...:", stm.ID(), stm.Syndat())
+		debug.Println("dial failed, cleaning up...:", stm.StreamID(), stm.Syndat())
 		// ch.server_socket_close = true
 		// this.serverCloseChan <- ServerCloseEvent{ch}
 		stm.Close()
 		appevt.Trigger("connact", -1)
 		return
 	}
-	info.Println("connected to:", conn.RemoteAddr().String(), stm.ID(), stm.Syndat())
+	info.Println("connected to:", conn.RemoteAddr().String(), stm.StreamID(), stm.Syndat())
 	// info.Println("channel connected,", ch.chidcli, ch.chidsrv, ch.conv, pkt.msgid)
 
 	var wg sync.WaitGroup
@@ -147,25 +182,20 @@ func (this *Tunneld) connectToBackend(stm *smux.Stream) {
 	wg.Wait()
 	stm.Close()
 	conn.Close()
-	log.Println("release conn", stm.ID(), stm.Syndat())
+	log.Println("release conn", stm.StreamID(), stm.Syndat())
 }
 
 var spdc2 = mintox.NewSpeedCalc()
 
-func (this *Tunneld) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) {
-	this.kcpInputChan <- ClientReadyReadEvent{nil, data, len(data), ctrl}
+func (this *Tunneld) onMinToxData(data []byte) {
+	this.kcpInputChan <- ClientReadyReadEvent{nil, data, len(data), false}
 }
 func (this *Tunneld) processKcpInputChan(evt ClientReadyReadEvent) {
-	data, ctrl := evt.buf, evt.ctrl
-	message := string(data)
-	friendId := this.mtox.friendpks
-	if ctrl {
-		pkt := parsePacket(bytes.NewBufferString(message).Bytes())
-		this.handleCtrlPacket(pkt, friendId)
-	} else {
-		this.handleDataPacket(data, 0)
-	}
+	err := this.mtvtp.Input(evt.buf)
+	gopp.ErrPrint(err)
 }
+
+/*
 func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
 	// kcp包前4字段为conv，little hacky
 	conv := binary.LittleEndian.Uint32(buf)
@@ -183,6 +213,8 @@ func (this *Tunneld) handleDataPacket(buf []byte, friendNumber uint32) {
 	}
 
 }
+*/
+/*
 func (this *Tunneld) handleCtrlPacket(pkt *Packet, friendId string) {
 	if pkt.Command == CMDCONNSYN {
 		info.Printf("New mux1 conn on tunnel %s to %s:%s:%s, conv: %d\n",
@@ -227,12 +259,13 @@ func (this *Tunneld) acceptconn() {
 			break
 		}
 		log.Println("new stream conn", stm.ID(), stm.Syndat())
-		go this.connectToBackend(stm)
+		// go this.connectToBackend(stm)
 	}
 	log.Println("mux1 accept loop done", mux1.conv, mux1.NumStreams())
 	this.mux1 = nil
 	mux1.Close()
 }
+*/
 
 // a tool function
 func (this *Tunneld) makeKcpConv(friendId string, pkt *Packet) uint32 {

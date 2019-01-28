@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -13,10 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/envsh/go-toxcore/mintox"
 	"github.com/kitech/goplusplus"
 	deadlock "github.com/sasha-s/go-deadlock"
-	"github.com/xtaci/smux"
 
 	rudp "mkuse/rudp2"
 )
@@ -46,7 +42,9 @@ type Tunnelc struct {
 	mtox *MTox
 	srvs map[string]*TunListener
 
-	mux1 *muxone
+	// mux1    *muxone
+	mtvtp   *rudp.Vtpconn
+	muxsess MuxSession
 
 	newConnC      chan NewConnEvent
 	muxConnedC    chan bool
@@ -63,6 +61,15 @@ func NewTunnelc() *Tunnelc {
 	// callbacks
 	this.mtox.DataFunc = this.onMinToxData
 	this.mtox.startup()
+
+	writeout := func(buf []byte) error {
+		data := rudp.PfxBuffp().Get()
+		data.Copy(buf)
+		defer rudp.PfxBuffp().Put(data)
+		prior := false
+		return this.onKcpOutput2(data, nil, prior)
+	}
+	this.mtvtp = rudp.NewVtpconn(writeout)
 	//
 	return this
 }
@@ -170,19 +177,19 @@ func nextconvid() uint32 {
 func (this *Tunnelc) muxConnHandler(evtname string, evt NewConnEvent) {
 	switch evtname {
 	case "newconn":
-		if this.mux1 == nil || (this.mux1 != nil && this.mux1.IsClosed()) {
-			mux1 := this.mux1
-			this.mux1 = nil
-			if mux1 != nil {
-				mux1.Close()
-				logger.Infoln("mux1 conn is closed, reconnect ...", mux1.conv)
+		muxsess := this.muxsess
+		if muxsess == nil || (muxsess != nil && muxsess.IsClosed()) {
+			this.muxsess = nil
+			if muxsess != nil {
+				muxsess.Close()
+				logger.Infoln("mux1 conn is closed, reconnect ...", muxsess.SessID())
 			}
 
 			this.newconnq = append(this.newconnq, evt)
 			go this.connectmux1(evt.tname)
 		} else {
 			// server conn
-			go this.serveconnevt(this.mux1, evt)
+			go this.serveconnevt(this.muxsess, evt)
 		}
 
 	case "muxconned":
@@ -190,7 +197,7 @@ func (this *Tunnelc) muxConnHandler(evtname string, evt NewConnEvent) {
 		for _, evt_ := range this.newconnq {
 			evt := evt_
 			// server conn
-			go this.serveconnevt(this.mux1, evt)
+			go this.serveconnevt(this.muxsess, evt)
 		}
 		this.newconnq = nil
 	case "muxdisconned":
@@ -211,59 +218,74 @@ func (this *Tunnelc) connectmux1(tname string) error {
 }
 func (this *Tunnelc) connectmux1impl(tname string, retry int) error {
 	info.Println("mux conning ...", retry)
-	tunrec := config.getRecordByName(tname)
-	conv := nextconvid()
-	pkt := NewBrokenPacket(conv)
-	pkt.Command = CMDCONNSYN
-	pkt.Tunname = tunrec.tname
-	pkt.Remoteip = tunrec.rhost
-	pkt.Remoteport = gopp.ToStr(tunrec.rport)
-	pktdat := pkt.toJson()
-	pba := rudp.NewPfxByteArray(len(pktdat))
-	pba.Copy(pktdat)
-	err := this.mtox.sendData(pba, true, true)
-	gopp.ErrPrint(err, conv)
 
-	info.Println("wait conned ...", retry)
-	select {
-	case <-mux1C:
-	case <-time.After(10 * time.Second):
-		err = fmt.Errorf("mux1 conn timeout %d", conv)
-		log.Println("close cli conn", retry, err)
+	tunrec := config.getRecordByName(tname)
+	/*
+		conv := nextconvid()
+		pkt := NewBrokenPacket(conv)
+		pkt.Command = CMDCONNSYN
+		pkt.Tunname = tunrec.tname
+		pkt.Remoteip = tunrec.rhost
+		pkt.Remoteport = gopp.ToStr(tunrec.rport)
+		pktdat := pkt.toJson()
+		pba := rudp.NewPfxByteArray(len(pktdat))
+		pba.Copy(pktdat)
+		err := this.mtox.sendData(pba, true, true)
+		gopp.ErrPrint(err, conv)
+	*/
+
+	/*
+		info.Println("wait conned ...", retry)
+		select {
+		case <-mux1C:
+		case <-time.After(10 * time.Second):
+			err = fmt.Errorf("mux1 conn timeout %d", conv)
+			log.Println("close cli conn", retry, err)
+			return err
+		}
+
+		writeout := func(data *rudp.PfxByteArray, prior bool) error {
+			return this.onKcpOutput2(data, nil, prior)
+		}
+		this.mux1 = NewMuxone(conv, writeout)
+	*/
+
+	addr := rudp.NewVtpAddr(fmt.Sprintf("toxrly.%s.%s", tunrec.tproto, tunrec.tname),
+		fmt.Sprintf("%s:%v", tunrec.rhost, tunrec.rport))
+	muxsess, err := RudpDialSync(this.mtvtp, addr)
+	gopp.ErrPrint(err)
+	if err != nil {
 		return err
 	}
 
-	writeout := func(data *rudp.PfxByteArray, prior bool) error {
-		return this.onKcpOutput2(data, nil, prior)
-	}
-	this.mux1 = NewMuxone(conv, writeout)
+	this.muxsess = muxsess
 	this.muxConnedC <- true
 	return nil
 }
-func (this *Tunnelc) serveconnevt(mux1 *muxone, evt NewConnEvent) {
+func (this *Tunnelc) serveconnevt(muxsess MuxSession, evt NewConnEvent) {
 	// server conn
 	conn := evt.conn
 	times := evt.times
 	btime := evt.btime
 	tname := evt.tname
-	this.serveconn(this.mux1, conn, times, btime, tname)
+	this.serveconn(muxsess, conn, times, btime, tname)
 }
-func (this *Tunnelc) serveconn(mux1 *muxone, conn net.Conn, times int, btime time.Time, tname string) {
+func (this *Tunnelc) serveconn(mux1 MuxSession, conn net.Conn, times int, btime time.Time, tname string) {
 	info.Println("serving conn ...", tname)
 	tunrec := config.getRecordByName(tname)
 	btime2 := time.Now()
 	syndat := fmt.Sprintf("%s://%s:%d/%s", tunrec.tproto, tunrec.rhost, tunrec.rport, tunrec.tname)
 
-	var stm *smux.Stream
+	var stm MuxStream
 	var err error
 	stmC := make(chan bool, 0)
 	go func() {
 		stm_, err_ := mux1.OpenStream(syndat)
-		if err == nil {
+		if err_ == nil {
+			stm = stm_
+			err = err_
 			select {
 			case stmC <- true:
-				stm = stm_
-				err = err_
 			default:
 				stm_.Close()
 			}
@@ -287,7 +309,7 @@ func (this *Tunnelc) serveconn(mux1 *muxone, conn net.Conn, times int, btime tim
 		this.newConnC <- NewConnEvent{conn, times + 1, btime, tname}
 		return
 	}
-	log.Println("stm open time", stm.ID(), time.Since(btime2))
+	log.Println("stm open time", stm.StreamID(), time.Since(btime2))
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -295,8 +317,8 @@ func (this *Tunnelc) serveconn(mux1 *muxone, conn net.Conn, times int, btime tim
 	// cli -> net
 	go func() {
 		wn, err := io.Copy(stm, conn)
-		gopp.ErrPrint(err, stm.ID(), wn)
-		info.Println("conn cli -> net done ", stm.ID())
+		gopp.ErrPrint(err, stm.StreamID(), wn)
+		info.Println("conn cli -> net done ", stm.StreamID())
 		wg.Done()
 		stm.Close()
 		/*
@@ -308,8 +330,8 @@ func (this *Tunnelc) serveconn(mux1 *muxone, conn net.Conn, times int, btime tim
 	// net -> cli
 	go func() {
 		wn, err := io.Copy(conn, stm)
-		gopp.ErrPrint(err, stm.ID(), wn)
-		info.Println("conn net -> cli done ", stm.ID())
+		gopp.ErrPrint(err, stm.StreamID(), wn)
+		info.Println("conn net -> cli done ", stm.StreamID())
 		wg.Done()
 
 		select {
@@ -321,7 +343,7 @@ func (this *Tunnelc) serveconn(mux1 *muxone, conn net.Conn, times int, btime tim
 	wg.Wait()
 	conn.Close()
 	stm.Close()
-	log.Println("done cli conn", stm.ID(), conn.RemoteAddr())
+	log.Println("done cli conn", stm.StreamID(), conn.RemoteAddr())
 	return
 }
 
@@ -338,11 +360,13 @@ func (this *Tunnelc) onKcpOutput2(buf *rudp.PfxByteArray, extra interface{}, pri
 	var sndlen int = size
 	var err error
 	err = this.mtox.sendData(buf, false, prior)
+	gopp.ErrPrint(err, buf.RawLen())
 	if err != nil {
 		debug.Println(err)
 	} else {
 		debug.Println("kcp->tox:", sndlen)
 	}
+
 	return err
 }
 
@@ -351,17 +375,23 @@ func (this *Tunnelc) onKcpOutput(buf *rudp.PfxByteArray, extra interface{}) {
 }
 
 // TODO 应该把数据发送到chan进入主循环再回来处理，就不会有concurrent问题
-func (this *Tunnelc) onMinToxData(data []byte, cbdata mintox.Object, ctrl bool) {
-	debug.Println(len(data), ctrl)
+func (this *Tunnelc) onMinToxData(data []byte) {
+	debug.Println(len(data))
+	err := this.mtvtp.Input(data)
+	gopp.ErrPrint(err)
 
-	if ctrl {
-		message := string(data)
-		pkt := parsePacket(bytes.NewBufferString(message).Bytes())
-		this.handleCtrlPacket(pkt, 0)
-	} else {
-		this.handleDataPacket(data, 0)
-	}
+	/*
+		if ctrl {
+			message := string(data)
+			pkt := parsePacket(bytes.NewBufferString(message).Bytes())
+			this.handleCtrlPacket(pkt, 0)
+		} else {
+			this.handleDataPacket(data, 0)
+		}
+	*/
 }
+
+/*
 func (this *Tunnelc) handleCtrlPacket(pkt *Packet, friendNumber uint32) {
 	if pkt.Command == CMDCONNACK {
 		info.Println("channel connected,", pkt.Conv, pkt.Data)
@@ -392,3 +422,4 @@ func (this *Tunnelc) handleDataPacket(buf []byte, friendNumber uint32) {
 	n := len(buf)
 	debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 }
+*/

@@ -44,7 +44,7 @@ type MTox struct {
 	relays   []string // binstr of client pubkey
 	relaysmu deadlock.RWMutex
 
-	DataFunc   func(data []byte, cbdata mintox.Object, ctrl bool)
+	DataFunc   func(data []byte)
 	DataCbdata mintox.Object
 }
 
@@ -214,24 +214,28 @@ func (this *MTox) onRoutingData(object mintox.Object, number uint32, connid uint
 	if false {
 		log.Println(ldebugp, number, connid, len(data), tcpcli.ServAddr)
 	}
-	if bytes.HasPrefix(data, TCP_PACKET_TUNDATA) {
-		this.DataFunc(data[len(TCP_PACKET_TUNDATA):], cbdata, false)
-	} else if bytes.HasPrefix(data, TCP_PACKET_TUNCTRL) {
-		this.DataFunc(data[len(TCP_PACKET_TUNCTRL):], cbdata, true)
-	} else {
-		log.Panicln("wtf", connid, len(data), tcpcli.ServAddr, string(data[:8]), data[:8])
-	}
-	appcm.Meter("mintoxc.recv.cnt.total").Mark(1)
-	appcm.Meter("mintoxc.recv.len.total").Mark(int64(len(data)))
-	appcm.Meter(fmt.Sprintf("mintoxc.recv.len.%s", tcpcli.ServAddr)).Mark(int64(len(data)))
+	this.DataFunc(data)
 
-	this.clismu.Lock()
-	clinfo := this.clis[tcpcli.ServPubkey.BinStr()]
-	if clinfo.inuse {
-		if bytes.HasPrefix(data, TCP_PACKET_TUNDATA) || bytes.HasPrefix(data, TCP_PACKET_TUNCTRL) {
+	/*
+		if bytes.HasPrefix(data, TCP_PACKET_TUNDATA) {
+			this.DataFunc(data[len(TCP_PACKET_TUNDATA):], cbdata, false)
+		} else if bytes.HasPrefix(data, TCP_PACKET_TUNCTRL) {
+			this.DataFunc(data[len(TCP_PACKET_TUNCTRL):], cbdata, true)
+		} else {
+			log.Panicln("wtf", connid, len(data), tcpcli.ServAddr, string(data[:8]), data[:8])
 		}
-	}
-	this.clismu.Unlock()
+		appcm.Meter("mintoxc.recv.cnt.total").Mark(1)
+		appcm.Meter("mintoxc.recv.len.total").Mark(int64(len(data)))
+		appcm.Meter(fmt.Sprintf("mintoxc.recv.len.%s", tcpcli.ServAddr)).Mark(int64(len(data)))
+
+		this.clismu.Lock()
+		clinfo := this.clis[tcpcli.ServPubkey.BinStr()]
+		if clinfo.inuse {
+			if bytes.HasPrefix(data, TCP_PACKET_TUNDATA) || bytes.HasPrefix(data, TCP_PACKET_TUNCTRL) {
+			}
+		}
+		this.clismu.Unlock()
+	*/
 }
 
 func (this *MTox) addFriend(friendpk string) {
@@ -258,8 +262,7 @@ func (this *MTox) sendData(data *rudp.PfxByteArray, ctrl bool, prior bool) error
 	var err error
 	var spdc *mintox.SpeedCalc
 	var tcpcli *mintox.TCPClient
-	data.PPBytes(gopp.IfElse(ctrl, TCP_PACKET_TUNCTRL, TCP_PACKET_TUNDATA).([]byte))
-	// data = append(gopp.IfElse(ctrl, TCP_PACKET_TUNCTRL, TCP_PACKET_TUNDATA).([]byte), data...)
+	// data.PPBytes(gopp.IfElse(ctrl, TCP_PACKET_TUNCTRL, TCP_PACKET_TUNDATA).([]byte))
 	rlycnt := len(this.relays)
 	if rlycnt == 0 {
 		// this.calcPriority()

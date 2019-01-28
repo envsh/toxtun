@@ -24,11 +24,13 @@ type MuxSession interface {
 	OpenStream(syndat string) (MuxStream, error)
 	AcceptStream() (MuxStream, error)
 	IsClosed() bool
+	Close() error
+	SessID() uint32
 }
 
 type MuxStream interface {
 	Syndat() string
-	SteamID() uint32
+	StreamID() uint32
 	net.Conn
 }
 
@@ -83,8 +85,15 @@ func (this *QuicSession) chksetclosed(err error) {
 	}
 }
 
+func (this *QuicSession) Close() error {
+	return this.sess.Close()
+}
+
 func (this *QuicSession) IsClosed() bool {
 	return atomic.LoadUint32(&this.closed) == 1
+}
+func (this *QuicSession) SessID() uint32 {
+	return 123
 }
 
 func (this *QuicStream) Close() error {
@@ -100,7 +109,7 @@ func (this *QuicStream) Syndat() string {
 	return this.syndat
 }
 
-func (this *QuicStream) SteamID() uint32                  { return uint32(this.stm.StreamID().StreamNum()) }
+func (this *QuicStream) StreamID() uint32                 { return uint32(this.stm.StreamID().StreamNum()) }
 func (this *QuicStream) LocalAddr() net.Addr              { return nil }
 func (this *QuicStream) RemoteAddr() net.Addr             { return nil }
 func (this *QuicStream) SetDeadline(time.Time) error      { return nil }
@@ -155,6 +164,7 @@ type RudpMux struct {
 	sesses     sync.Map // accepted/dialed sessions conv => *RudpSession
 }
 type RudpSession struct {
+	raddr    net.Addr
 	conv     uint32
 	accepted bool
 	sess     *smux.Session
@@ -164,7 +174,7 @@ type RudpStream struct {
 	stm *smux.Stream
 }
 
-func NewRudpSession(conv uint32, accepted bool,
+func NewRudpSession(conv uint32, raddr net.Addr, accepted bool,
 	writeoutfn func(*rudp.PfxByteArray, bool) error) *RudpSession {
 	this := &RudpSession{}
 	this.conv = conv
@@ -243,7 +253,7 @@ func (this *RudpStream) Syndat() string {
 	return this.stm.Syndat()
 }
 
-func (this *RudpStream) SteamID() uint32                  { return this.stm.ID() }
+func (this *RudpStream) StreamID() uint32                 { return this.stm.ID() }
 func (this *RudpStream) LocalAddr() net.Addr              { return nil }
 func (this *RudpStream) RemoteAddr() net.Addr             { return nil }
 func (this *RudpStream) SetDeadline(time.Time) error      { return nil }
@@ -260,6 +270,8 @@ func RudpListen(conn net.PacketConn) MuxListener {
 
 func NewRudpMux(conn net.PacketConn) *RudpMux {
 	this := &RudpMux{}
+	this.conn = conn
+	this.newinconnC = make(chan uint32, 1)
 	return this
 }
 
@@ -277,13 +289,11 @@ func (this *RudpMux) Close() error {
 	return nil
 }
 
-func (this *RudpMux) AcceptStream() (MuxStream, error) {
-	return nil, nil
-}
-
-func (this *RudpMux) writeoutfn(data *rudp.PfxByteArray, prior bool) error {
-	_, err := this.conn.WriteTo(data.FullData(), nil)
-	return err
+func (this *RudpMux) makewriteoutfn(raddr net.Addr) func(data *rudp.PfxByteArray, prior bool) error {
+	return func(data *rudp.PfxByteArray, prior bool) error {
+		_, err := this.conn.WriteTo(data.FullData(), raddr)
+		return err
+	}
 }
 
 func (this *RudpMux) dispatchProc() {
@@ -304,16 +314,28 @@ func (this *RudpMux) dispatchProc() {
 		// check if new incoming conn handshake
 		if bytes.HasPrefix(tbuf, RUDPMUXCONNSYN) {
 			conv = binary.LittleEndian.Uint32(tbuf[len(RUDPMUXCONNSYN):])
-			sess := NewRudpSession(conv, true, this.writeoutfn)
+			log.Println("new rudp mux conn syn", conv)
+			sess := NewRudpSession(conv, addr, true, this.makewriteoutfn(addr))
 			this.sesses.Store(conv, sess)
 			this.newinconnC <- conv
+
+			pkt := bytes.NewBuffer(nil)
+			pkt.Write(RUDPMUXCONNACK)
+			binary.Write(pkt, binary.LittleEndian, conv)
+			_, err := conn.WriteTo(pkt.Bytes(), addr)
+			gopp.ErrPrint(err, conv)
+			if err != nil {
+				log.Println("wtf, send mux conn ack failed", conv, addr.Network(), addr.String())
+			}
+			log.Println("sent mux conn ack", err)
 			continue
 		}
 
 		// check if connack
 		if bytes.HasPrefix(tbuf, RUDPMUXCONNACK) {
 			conv = binary.LittleEndian.Uint32(tbuf[len(RUDPMUXCONNSYN):])
-			sess := NewRudpSession(conv, false, this.writeoutfn)
+			log.Println("rudp mux conn ack", conv)
+			sess := NewRudpSession(conv, addr, false, this.makewriteoutfn(addr))
 			this.sesses.Store(conv, sess)
 			if chx, ok := this.dialackchs.Load(conv); ok {
 				ch := chx.(chan uint32)
@@ -336,13 +358,15 @@ func (this *RudpMux) dispatchProc() {
 }
 
 var RUDPMUXCONNSYN = []byte("RUDPMUXCONNSYN")
-var RUDPMUXCONNACK = []byte("RUDPMUXCONNSYN")
+var RUDPMUXCONNACK = []byte("RUDPMUXCONNACK")
 
 // 1 pktconn : n sess : m stm
 
-func (this *RudpMux) dialsync(ctx context.Context) (MuxSession, error) {
+func (this *RudpMux) dialsync(ctx context.Context, addr net.Addr) (MuxSession, error) {
 	conn := this.conn
-
+	if conn == nil {
+		log.Println("wtf conn nil???")
+	}
 	conv := rudplsnerman.nextconv()
 	ackch := make(chan uint32, 0)
 	this.dialackchs.Store(conv, ackch)
@@ -351,7 +375,7 @@ func (this *RudpMux) dialsync(ctx context.Context) (MuxSession, error) {
 	pkt := bytes.NewBuffer(nil)
 	pkt.Write(RUDPMUXCONNSYN)
 	binary.Write(pkt, binary.LittleEndian, conv)
-	_, err := conn.WriteTo(pkt.Bytes(), nil)
+	_, err := conn.WriteTo(pkt.Bytes(), addr)
 	if err != nil {
 		return nil, err
 	}
@@ -369,9 +393,9 @@ func (this *RudpMux) dialsync(ctx context.Context) (MuxSession, error) {
 	}
 }
 
-func RudpDialSync(conn net.PacketConn) (MuxSession, error) {
+func RudpDialSync(conn net.PacketConn, raddr net.Addr) (MuxSession, error) {
 	mx := rudplsnerman.createlsner(conn)
-	return mx.dialsync(context.Background())
+	return mx.dialsync(context.Background(), raddr)
 }
 
 //
@@ -384,7 +408,7 @@ type rudplsnermanager struct {
 func newrudplsnermanager() *rudplsnermanager {
 	this := &rudplsnermanager{}
 	this.lsners = map[net.PacketConn]*RudpMux{}
-	this.conv = 123456
+	this.conv = 1234567890
 	return this
 }
 
