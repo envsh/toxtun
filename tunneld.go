@@ -158,15 +158,19 @@ func (this *Tunneld) connectToBackend(stm MuxStream) {
 
 	// client close first
 	clicloseC := make(chan bool, 0)
+	rnsrv := int64(0)
+	wnsrv := int64(0)
 	// srv -> net
 	go func() {
 		wn, err := io.Copy(stm, conn)
 		gopp.ErrPrint(err, wn)
+		rnsrv = wn
+		log.Println("xfer srv -> stm done", stm.StreamID(), wn)
 		wg.Done()
 		select {
 		case <-clicloseC:
 		case <-time.After(30 * time.Second):
-			stm.Close()
+			// stm.Close()
 		}
 	}()
 
@@ -174,6 +178,8 @@ func (this *Tunneld) connectToBackend(stm MuxStream) {
 	go func() {
 		wn, err := io.Copy(conn, stm)
 		gopp.ErrPrint(err, wn)
+		wnsrv = wn
+		log.Println("xfer stm -> srv done", stm.StreamID(), wn)
 		wg.Done()
 		conn.Close()
 		clicloseC <- true
@@ -182,7 +188,7 @@ func (this *Tunneld) connectToBackend(stm MuxStream) {
 	wg.Wait()
 	stm.Close()
 	conn.Close()
-	log.Println("release conn", stm.StreamID(), stm.Syndat())
+	log.Println("release conn", stm.StreamID(), stm.Syndat(), "rnsrv", rnsrv, "wnsrv", wnsrv)
 }
 
 var spdc2 = mintox.NewSpeedCalc()

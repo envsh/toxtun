@@ -183,8 +183,8 @@ func NewRudpSession(conv uint32, raddr net.Addr, accepted bool,
 
 	cfg := &smux.Config{}
 	cfg = &*smux.DefaultConfig()
-	cfg.KeepAliveInterval *= 2
-	cfg.KeepAliveTimeout *= 2
+	cfg.KeepAliveInterval *= 3
+	cfg.KeepAliveTimeout *= 30
 
 	var sess *smux.Session
 	var err error
