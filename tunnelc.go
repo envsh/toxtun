@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/kitech/goplusplus"
 	deadlock "github.com/sasha-s/go-deadlock"
 
@@ -39,7 +41,9 @@ func newTunListenerUdp2(lsn net.Listener) *TunListener {
 func newTunListenerTcp(lsn net.Listener) *TunListener { return &TunListener{proto: "tcp", tcplsn: lsn} }
 
 type Tunnelc struct {
-	mtox *MTox
+	tox *tox.Tox
+
+	// mtox *MTox
 	srvs map[string]*TunListener
 
 	// mux1    *muxone
@@ -50,28 +54,51 @@ type Tunnelc struct {
 	muxConnedC    chan bool
 	muxDisconnedC chan bool
 	newconnq      []NewConnEvent // 连接阶段暂存连接请求
+	toxPollChan   chan ToxPollEvent
 }
 
 func NewTunnelc() *Tunnelc {
 	this := new(Tunnelc)
 	this.srvs = make(map[string]*TunListener)
 
-	this.mtox = newMinTox("toxtunc")
+	t := makeTox("toxtunc")
+	this.tox = t
+	recs := config.recs
+	this.tox.SelfSetStatusMessage(fmt.Sprintf("%s of toxtun, %+v", "toxtuncs", recs))
 
 	// callbacks
-	this.mtox.DataFunc = this.onMinToxData
-	this.mtox.startup()
+	t.CallbackSelfConnectionStatus(this.onToxnetSelfConnectionStatus, nil)
+	t.CallbackFriendRequest(this.onToxnetFriendRequest, nil)
+	t.CallbackFriendConnectionStatus(this.onToxnetFriendConnectionStatus, nil)
+	t.CallbackFriendMessage(this.onToxnetFriendMessage, nil)
+	t.CallbackFriendLossyPacket(this.onToxnetFriendLossyPacket, nil)
+	t.CallbackFriendLosslessPacket(this.onToxnetFriendLosslessPacket, nil)
 
-	writeout := func(buf []byte) error {
-		data := rudp.PfxBuffp().Get()
-		data.Copy(buf)
-		defer rudp.PfxBuffp().Put(data)
-		prior := false
-		return this.onKcpOutput2(data, nil, prior)
-	}
+	// this.mtox = newMinTox("toxtunc")
+	// callbacks
+	// this.mtox.DataFunc = this.onMinToxData
+	// this.mtox.startup()
+
+	writeout := this.writeout4tox
 	this.mtvtp = rudp.NewVtpconn(writeout)
 	//
 	return this
+}
+
+func (this *Tunnelc) writeout4tox(buf []byte) error {
+	data := rudp.PfxBuffp().Get()
+	data.Copy(buf)
+	defer rudp.PfxBuffp().Put(data)
+	prior := false
+	return this.onKcpOutput2(data, nil, prior)
+}
+
+func (this *Tunnelc) writeout4mtox(buf []byte) error {
+	data := rudp.PfxBuffp().Get()
+	data.Copy(buf)
+	defer rudp.PfxBuffp().Put(data)
+	prior := false
+	return this.onKcpOutput2(data, nil, prior)
 }
 
 func (this *Tunnelc) serve() {
@@ -81,8 +108,19 @@ func (this *Tunnelc) serve() {
 	this.newConnC = make(chan NewConnEvent, mpcsz)
 	this.muxConnedC = make(chan bool, 1)
 	this.muxDisconnedC = make(chan bool, 1)
+	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
 
 	this.serveTunnels()
+
+	// install pollers
+	go func() {
+		for {
+			time.Sleep(time.Duration(smuse.tox_interval) * time.Millisecond)
+			// time.Sleep(200 * time.Millisecond)
+			// this.toxPollChan <- ToxPollEvent{}
+			iterate(this.tox)
+		}
+	}()
 
 	// like event handler
 	for {
@@ -93,6 +131,8 @@ func (this *Tunnelc) serve() {
 			this.muxConnHandler("muxconned", NewConnEvent{})
 		case <-this.muxDisconnedC:
 			this.muxConnHandler("muxdisconned", NewConnEvent{})
+		case <-this.toxPollChan:
+
 		}
 	}
 }
@@ -107,7 +147,9 @@ func (this *Tunnelc) listenTunnels() {
 				continue
 			}
 			this.srvs[tunrec.tname] = newTunListenerTcp(srv)
-			this.mtox.addFriend(tunrec.rpubkey)
+			// this.mtox.addFriend(tunrec.rpubkey)
+			_, err = this.tox.FriendAdd(tunrec.rpubkey, "hiyo")
+			gopp.ErrPrint(err, tunrec.rpubkey)
 		} else if tunrec.tproto == "udp" {
 			srv, err := ListenUDP(fmt.Sprintf(":%d", tunnelServerPort))
 			if err != nil {
@@ -115,7 +157,9 @@ func (this *Tunnelc) listenTunnels() {
 				continue
 			}
 			this.srvs[tunrec.tname] = newTunListenerUdp2(srv)
-			this.mtox.addFriend(tunrec.rpubkey)
+			// this.mtox.addFriend(tunrec.rpubkey)
+			_, err = this.tox.FriendAdd(tunrec.rpubkey, "hiyo")
+			gopp.ErrPrint(err, tunrec.rpubkey)
 		} else {
 			log.Panicln("wtf,", tunrec)
 		}
@@ -355,11 +399,22 @@ func (this *Tunnelc) onKcpOutput2(buf *rudp.PfxByteArray, extra interface{}, pri
 	}
 
 	// tunrec := config.getRecordByName(ch.tname)
-	// toxtunid := tunrec.rpubkey
+	var toxtunid string
+	for _, reco := range config.recs {
+		toxtunid = reco.rpubkey
+		break
+	}
+	fnum, err := this.tox.FriendByPublicKey(toxtunid)
+	gopp.ErrPrint(err, toxtunid)
+	if err != nil {
+		return err
+	}
 
 	var sndlen int = size
-	var err error
-	err = this.mtox.sendData(buf, false, prior)
+	// var err error
+	// err = this.mtox.sendData(buf, false, prior)
+	buf.PPU8(254)
+	err = this.tox.FriendSendLossyPacket(fnum, string(buf.FullData()))
 	gopp.ErrPrint(err, buf.RawLen())
 	if err != nil {
 		debug.Println(err)
@@ -423,3 +478,127 @@ func (this *Tunnelc) handleDataPacket(buf []byte, friendNumber uint32) {
 	debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
 }
 */
+
+//////////////
+func (this *Tunnelc) onToxnetSelfConnectionStatus(t *tox.Tox, status int, extra interface{}) {
+	info.Println("mytox status:", status)
+	for tname, _ := range this.srvs {
+		tunrec := config.getRecordByName(tname)
+		this.onToxnetSelfConnectionStatusImpl(t, status, extra, tunrec.tname, tunrec.rpubkey)
+	}
+	if status == 0 {
+		switchServer(t)
+	} else {
+		addLiveBots(t)
+		t.WriteSavedata(tox_savedata_fname)
+	}
+
+	if status == 0 {
+		appevt.Trigger("selfonline", false)
+		appevt.Trigger("selfoffline")
+	} else {
+		appevt.Trigger("selfonline", true)
+	}
+}
+
+// 尝试添加为好友
+func (this *Tunnelc) onToxnetSelfConnectionStatusImpl(t *tox.Tox, status int, extra interface{},
+	tname string, toxtunid string) {
+	friendNumber, err := t.FriendByPublicKey(toxtunid)
+	log.Println(friendNumber, err, len(toxtunid), toxtunid)
+	if err == nil {
+		if false {
+			t.FriendDelete(friendNumber)
+		}
+	}
+	if err != nil {
+		t.FriendAdd(toxtunid, fmt.Sprintf("hello, i'am tuncli of %s", tname))
+		t.WriteSavedata(tox_savedata_fname)
+	}
+}
+
+func (this *Tunnelc) onToxnetFriendRequest(t *tox.Tox, friendId string, message string, userData interface{}) {
+	debug.Println(friendId, message)
+}
+
+func (this *Tunnelc) onToxnetFriendConnectionStatus(t *tox.Tox, friendNumber uint32, status int, userData interface{}) {
+	fid, _ := this.tox.FriendGetPublicKey(friendNumber)
+	info.Println("peer status (fn/st/id):", friendNumber, status, fid)
+	if status == 0 {
+		if friendInConfig(fid) {
+			switchServer(t)
+		}
+	}
+
+	livebotsOnFriendConnectionStatus(t, friendNumber, status)
+
+	if status == 0 {
+		appevt.Trigger("peeronline", false)
+		appevt.Trigger("peeroffline")
+	} else {
+		appevt.Trigger("peeronline", true)
+	}
+}
+
+func (this *Tunnelc) onToxnetFriendMessage(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
+	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
+	pkt := parsePacket(bytes.NewBufferString(message).Bytes())
+	if pkt == nil {
+		info.Println("maybe not command, just normal message:", gopp.StrSuf(message, 52))
+	} else {
+	}
+}
+
+func (this *Tunnelc) onToxnetFriendLossyPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
+	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
+	buf := bytes.NewBufferString(message).Bytes()
+	if buf[0] == 254 { // lossypacket
+		data := buf[1:]
+		debug.Println(len(data))
+		err := this.mtvtp.Input(data)
+		gopp.ErrPrint(err)
+	} else {
+		info.Println("unknown message:", buf[0])
+	}
+}
+
+func (this *Tunnelc) onToxnetFriendLosslessPacket(t *tox.Tox, friendNumber uint32, message string, userData interface{}) {
+	debug.Println(friendNumber, len(message), gopp.StrSuf(message, 52))
+	buf := bytes.NewBufferString(message).Bytes()
+	if buf[0] == 191 { // lossypacket
+		buf = buf[1:]
+		/*
+			var conv uint32
+			// kcp包前4字节为conv，little hacky
+			if len(buf) < 4 {
+				errl.Println("wtf")
+			}
+
+			conv = binary.LittleEndian.Uint32(buf)
+			ch := this.chpool.pool2[conv]
+			if ch == nil {
+				errl.Println("maybe has some problem")
+			}
+			n := ch.kcp.Input(buf, true, true)
+			debug.Println("tox->kcp:", conv, n, len(buf), gopp.StrSuf(string(buf), 52))
+		*/
+	} else {
+		info.Println("unknown message:", buf[0])
+	}
+}
+
+func (this *Tunnelc) FriendSendMessage(friendId string, message string) (uint32, error) {
+	friendNumber, err := this.tox.FriendByPublicKey(friendId)
+	if err != nil {
+		return 0, err
+	}
+	return this.tox.FriendSendMessage(friendNumber, message)
+}
+
+func (this *Tunnelc) FriendSendLossyPacket(friendId string, message string) error {
+	friendNumber, err := this.tox.FriendByPublicKey(friendId)
+	if err != nil {
+		return err
+	}
+	return this.tox.FriendSendLossyPacket(friendNumber, message)
+}
