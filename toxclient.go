@@ -224,6 +224,27 @@ func iterate(t *tox.Tox) {
 	// t.Kill()
 }
 
+func toxiter(tox *tox.Tox) {
+	tptime := time.Now()
+	for {
+		time.Sleep(time.Duration(smuse.tox_interval) * time.Millisecond)
+		// time.Sleep(30 * time.Millisecond)
+		// this.toxPollChan <- ToxPollEvent{}
+		outit := false
+		if time.Since(tptime) > 10*time.Second {
+			tptime = time.Now()
+			outit = true
+		}
+		if outit {
+			// log.Println("tox ittttttttttt ...")
+		}
+		iterate(tox)
+		if outit {
+			// log.Println("tox ittttttttttt")
+		}
+	}
+}
+
 var useFixedBSs = false
 
 func addFixedBootstraps(t *tox.Tox) {

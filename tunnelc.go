@@ -54,7 +54,6 @@ type Tunnelc struct {
 	muxConnedC    chan bool
 	muxDisconnedC chan bool
 	newconnq      []NewConnEvent // 连接阶段暂存连接请求
-	toxPollChan   chan ToxPollEvent
 }
 
 func NewTunnelc() *Tunnelc {
@@ -108,19 +107,11 @@ func (this *Tunnelc) serve() {
 	this.newConnC = make(chan NewConnEvent, mpcsz)
 	this.muxConnedC = make(chan bool, 1)
 	this.muxDisconnedC = make(chan bool, 1)
-	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
 
 	this.serveTunnels()
 
 	// install pollers
-	go func() {
-		for {
-			time.Sleep(time.Duration(smuse.tox_interval) * time.Millisecond)
-			// time.Sleep(200 * time.Millisecond)
-			// this.toxPollChan <- ToxPollEvent{}
-			iterate(this.tox)
-		}
-	}()
+	go toxiter(this.tox)
 
 	// like event handler
 	for {
@@ -131,8 +122,6 @@ func (this *Tunnelc) serve() {
 			this.muxConnHandler("muxconned", NewConnEvent{})
 		case <-this.muxDisconnedC:
 			this.muxConnHandler("muxdisconned", NewConnEvent{})
-		case <-this.toxPollChan:
-
 		}
 	}
 }
@@ -337,15 +326,16 @@ func (this *Tunnelc) serveconn(mux1 MuxSession, conn net.Conn, times int, btime 
 	}()
 	select {
 	case <-stmC:
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		err = fmt.Errorf("open steam timeout")
 	}
 	gopp.ErrPrint(err)
 	if err != nil {
-		if times >= 5 {
+		if times >= 3 {
 			log.Println("stm conn failed timeout", times, conn.RemoteAddr(), mux1.IsClosed(), err)
-			conn.Close()
 			mux1.Close()
+			this.muxsess.Close()
+			conn.Close()
 			return
 		}
 		log.Println("stm conn failed, retry", times, conn.RemoteAddr(), mux1.IsClosed(), err)

@@ -27,7 +27,6 @@ type Tunneld struct {
 	mtvtp    *rudp.Vtpconn
 	muxlsner MuxListener
 
-	toxPollChan  chan ToxPollEvent
 	kcpInputChan chan ClientReadyReadEvent
 }
 
@@ -62,7 +61,6 @@ func NewTunneld() *Tunneld {
 }
 
 func (this *Tunneld) init() {
-	this.toxPollChan = make(chan ToxPollEvent, mpcsz)
 	this.kcpInputChan = make(chan ClientReadyReadEvent, mpcsz)
 
 	// callbacks
@@ -75,32 +73,12 @@ func (this *Tunneld) init() {
 	go this.serve()
 
 	// install pollers
-	go func() {
-		tptime := time.Now()
-		for {
-			time.Sleep(time.Duration(smuse.tox_interval) * time.Millisecond)
-			// time.Sleep(30 * time.Millisecond)
-			// this.toxPollChan <- ToxPollEvent{}
-			outit := false
-			if time.Since(tptime) > 10*time.Second {
-				tptime = time.Now()
-				outit = true
-			}
-			if outit {
-				log.Println("tox ittttttttttt ...")
-			}
-			iterate(this.tox)
-			if outit {
-				log.Println("tox ittttttttttt")
-			}
-		}
-	}()
+	go toxiter(this.tox)
 
 	for {
 		select {
 		case evt := <-this.kcpInputChan:
 			this.processKcpInputChan(evt)
-		case <-this.toxPollChan:
 		}
 	}
 }
@@ -164,7 +142,7 @@ func (this *Tunneld) onKcpOutput2(buf *rudp.PfxByteArray, extra interface{}, pri
 		toxtunid = reco.rpubkey
 		break
 	}
-	toxtunid = "TODOTODO"
+	toxtunid = "TODO"
 	fnum, err := this.tox.FriendByPublicKey(toxtunid)
 	gopp.ErrPrint(err, toxtunid)
 	if err != nil {
