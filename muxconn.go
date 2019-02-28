@@ -86,6 +86,7 @@ func (this *QuicSession) chksetclosed(err error) {
 }
 
 func (this *QuicSession) Close() error {
+	atomic.StoreUint32(&this.closed, 1)
 	return this.sess.Close()
 }
 
@@ -213,7 +214,7 @@ func (this *RudpSession) Write(buf []byte) (int, error) {
 }
 
 func (this *RudpSession) Close() error {
-	return nil
+	return this.sess.Close()
 }
 func (this *RudpSession) Closed() bool {
 	return this.sess.IsClosed()
@@ -286,6 +287,18 @@ func (this *RudpMux) Accept() (MuxSession, error) {
 	return nil, fmt.Errorf("Unknown error %v", conv)
 }
 func (this *RudpMux) Close() error {
+	var sesses = map[interface{}]*RudpSession{}
+	this.sesses.Range(func(key interface{}, value interface{}) bool {
+		sesses[key] = value.(*RudpSession)
+		return true
+	})
+	for key, sess := range sesses {
+		err := sess.Close()
+		gopp.ErrPrint(err)
+		if err == nil {
+			this.sesses.Delete(key)
+		}
+	}
 	return nil
 }
 
