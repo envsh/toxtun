@@ -81,7 +81,7 @@ func set_bootstrap_group(mode string) {
 	tmpsrvs := append(append(append([]interface{}{}, cn_servers...), us_servers...), ru_servers...)
 	bsgroups := map[string]interface{}{"us": us_servers, "ru": ru_servers, "cn": cn_servers, "auto": tmpsrvs}
 	switch mode {
-	case "client":
+	case "client", "inone":
 		if bsgroupx, ok := bsgroups[tox_bs_group]; ok {
 			// servers = bsgroupx.([]interface{})[:9]
 			servers = bsgroupx.([]interface{})

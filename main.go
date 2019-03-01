@@ -14,8 +14,8 @@ const (
 
 var (
 	// options
-	inst_mode   string             // = "server" | "client"
-	kcp_mode    string = "default" // = "default" // fast
+	inst_mode   string             // = server | client | inone
+	kcp_mode    string = "default" // = default // fast
 	config_file string             // = "toxtun_whtun.ini"
 	config      *TunnelConfig
 )
@@ -67,6 +67,9 @@ func main() {
 	case "server":
 		td := NewTunneld()
 		go td.serve()
+	case "inone":
+		to := NewTunnelx()
+		go to.serve()
 	default:
 		log.Println("Invalid mode:", inst_mode, ", server/client.")
 		flag.PrintDefaults()
