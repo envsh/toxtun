@@ -305,7 +305,9 @@ func (this *PeerConn) serveconn(mux1 MuxSession, conn net.Conn, times int, btime
 		if times >= 3 {
 			log.Println("stm conn failed timeout", times, conn.RemoteAddr(), mux1.IsClosed(), err)
 			mux1.Close()
-			this.muxsess.Close()
+			if this.muxsess != nil {
+				this.muxsess.Close()
+			}
 			conn.Close()
 			return
 		}
