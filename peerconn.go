@@ -215,7 +215,7 @@ func (this *PeerConn) muxConnHandler(evtname string, evt NewConnEvent) {
 			this.muxsess = nil
 			if muxsess != nil {
 				muxsess.Close()
-				logger.Infoln("mux1 conn is closed, reconnect ...", muxsess.SessID())
+				log.Println("mux1 conn is closed, reconnect ...", muxsess.SessID())
 			}
 
 			this.newconnq = append(this.newconnq, evt)

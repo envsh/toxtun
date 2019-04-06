@@ -359,19 +359,49 @@ func (this *RudpMux) dispatchProc() {
 			continue
 		}
 
+		// check if connrst
+		if bytes.HasPrefix(tbuf, RUDPMUXCONNRST) {
+			conv = binary.LittleEndian.Uint32(tbuf[len(RUDPMUXCONNSYN):])
+			log.Println("rudp mux conn rst", conv)
+			if sessx, ok := this.sesses.Load(conv); ok {
+				sess := sessx.(*RudpSession)
+				err := sess.Close()
+				gopp.ErrPrint(err, conv)
+			} else {
+				log.Println("rudp mux conn rst not found", conv)
+			}
+			continue
+		}
+
+		// check others
+		if bytes.HasPrefix(tbuf, RUDPMUXCONNSYN[:len(RUDPMUXCONNSYN)-3]) {
+			log.Println("Unimpl cmd", string(tbuf[:len(RUDPMUXCONNSYN)]))
+			continue
+		}
+
 		// dispatch to sess by conv
 		conv = binary.LittleEndian.Uint32(tbuf)
 		if sessx, ok := this.sesses.Load(conv); ok {
 			sess := sessx.(*RudpSession)
 			sess.input(tbuf)
 		} else {
-			log.Println("conv not found", conv)
+			log.Println("conv not found", conv) // is possible reply a close???
+			pkt := bytes.NewBuffer(nil)
+			pkt.Write(RUDPMUXCONNRST)
+			binary.Write(pkt, binary.LittleEndian, conv)
+			_, err := conn.WriteTo(pkt.Bytes(), addr)
+			gopp.ErrPrint(err, conv)
+			if err != nil {
+				log.Println("wtf, send mux conn rst failed", conv, addr.Network(), addr.String())
+			}
+			log.Println("sent mux conn rst", err)
 		}
 	}
 }
 
 var RUDPMUXCONNSYN = []byte("RUDPMUXCONNSYN")
 var RUDPMUXCONNACK = []byte("RUDPMUXCONNACK")
+var RUDPMUXCONNRST = []byte("RUDPMUXCONNRST")
 
 // 1 pktconn : n sess : m stm
 

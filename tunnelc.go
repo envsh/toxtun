@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"gopp"
 	"io"
 	"log"
 	"math"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	tox "github.com/TokTok/go-toxcore-c"
-	"github.com/kitech/goplusplus"
 	deadlock "github.com/sasha-s/go-deadlock"
 
 	rudp "mkuse/rudp2"
@@ -215,7 +215,7 @@ func (this *Tunnelc) muxConnHandler(evtname string, evt NewConnEvent) {
 			this.muxsess = nil
 			if muxsess != nil {
 				muxsess.Close()
-				logger.Infoln("mux1 conn is closed, reconnect ...", muxsess.SessID())
+				log.Println("mux1 conn is closed, reconnect ...", muxsess.SessID())
 			}
 
 			this.newconnq = append(this.newconnq, evt)
