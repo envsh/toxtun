@@ -28,10 +28,10 @@ type PeerConn struct {
 	muxsess  MuxSession
 
 	// client
-	newConnC      chan NewConnEvent
-	muxConnedC    chan bool
-	muxDisconnedC chan bool
-	newconnq      []NewConnEvent // 连接阶段暂存连接请求
+	newConnC chan NewConnEvent
+	// muxConnedC    chan bool
+	// muxDisconnedC chan bool
+	// newconnq      []NewConnEvent // 连接阶段暂存连接请求
 }
 
 func NewPeerConn(tox *tox.Tox, peerno uint32, tptype int) *PeerConn {
@@ -42,7 +42,8 @@ func NewPeerConn(tox *tox.Tox, peerno uint32, tptype int) *PeerConn {
 
 	writeout := this.writeout4tox
 	this.mtvtp = rudp.NewVtpconn(writeout)
-	this.muxlsner = RudpListen(this.mtvtp)
+	// this.muxlsner = RudpListen(this.mtvtp)
+	this.muxlsner = NewRudp3Listener(this.mtvtp)
 
 	go this.servesrv()
 	go this.servecli()
@@ -61,6 +62,8 @@ func (this *PeerConn) servesrv() {
 			break
 		}
 
+		log.Println("New muxsess", sess.SessID(), this.muxsess == nil)
+		this.muxsess = sess
 		go this.servesess(sess)
 	}
 	log.Println("lsner done")
@@ -188,8 +191,8 @@ func (this *PeerConn) connectToBackend(stm MuxStream) {
 func (this *PeerConn) putnewconn(evt NewConnEvent) { this.newConnC <- evt }
 func (this *PeerConn) servecli() {
 	this.newConnC = make(chan NewConnEvent, mpcsz)
-	this.muxConnedC = make(chan bool, 1)
-	this.muxDisconnedC = make(chan bool, 1)
+	// this.muxConnedC = make(chan bool, 1)
+	// this.muxDisconnedC = make(chan bool, 1)
 
 	for {
 		// like event handler
@@ -197,10 +200,10 @@ func (this *PeerConn) servecli() {
 			select {
 			case evt := <-this.newConnC:
 				this.muxConnHandler("newconn", evt)
-			case <-this.muxConnedC:
-				this.muxConnHandler("muxconned", NewConnEvent{})
-			case <-this.muxDisconnedC:
-				this.muxConnHandler("muxdisconned", NewConnEvent{})
+				// case <-this.muxConnedC:
+				//	this.muxConnHandler("muxconned", NewConnEvent{})
+				// case <-this.muxDisconnedC:
+				//	this.muxConnHandler("muxdisconned", NewConnEvent{})
 			}
 		}
 	}
@@ -212,13 +215,14 @@ func (this *PeerConn) muxConnHandler(evtname string, evt NewConnEvent) {
 	case "newconn":
 		muxsess := this.muxsess
 		if muxsess == nil || (muxsess != nil && muxsess.IsClosed()) {
+			log.Panicln("not possible")
 			this.muxsess = nil
 			if muxsess != nil {
 				muxsess.Close()
 				log.Println("mux1 conn is closed, reconnect ...", muxsess.SessID())
 			}
 
-			this.newconnq = append(this.newconnq, evt)
+			// this.newconnq = append(this.newconnq, evt)
 			go this.connectmux1(evt.tname)
 		} else {
 			// server conn
@@ -227,12 +231,14 @@ func (this *PeerConn) muxConnHandler(evtname string, evt NewConnEvent) {
 
 	case "muxconned":
 		info.Println("muxconned")
-		for _, evt_ := range this.newconnq {
-			evt := evt_
-			// server conn
-			go this.serveconnevt(this.muxsess, evt)
-		}
-		this.newconnq = nil
+		/*
+			for _, evt_ := range this.newconnq {
+				evt := evt_
+				// server conn
+				go this.serveconnevt(this.muxsess, evt)
+			}
+			this.newconnq = nil
+		*/
 	case "muxdisconned":
 	default:
 		log.Panicln("unknown evtname", evtname)
@@ -263,7 +269,7 @@ func (this *PeerConn) connectmux1impl(tname string, retry int) error {
 	}
 
 	this.muxsess = muxsess
-	this.muxConnedC <- true
+	// this.muxConnedC <- true
 	return nil
 }
 func (this *PeerConn) serveconnevt(muxsess MuxSession, evt NewConnEvent) {

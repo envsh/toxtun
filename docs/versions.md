@@ -4,5 +4,6 @@
 * 0.2 mintox实例 + KCP
 * 0.3 mintox实例 + BBR
 * 0.4 原tox实例 + BBR
-* 0.5 原tox实例 + BBR + 对等节点
+* 0.5 原tox实例 + BBR + 对等节点 + RUDP2
+* 0.6 原tox实例 + BBR + 对等节点 + RUDP3
 
