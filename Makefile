@@ -5,6 +5,7 @@ GOVVV=`govvv -flags -version ${VERSION}|sed 's/=/=GOVVV-/g'`
 
 all: dynamic
 
+# pure go: need clean a lot code
 pgo:
 		# go build: -race requires cgo; enable cgo by setting CGO_ENABLED=1
 	CGO_ENABLED=0 go build -v -gcflags '-N -l' -ldflags "${GOVVV}" .
@@ -14,7 +15,7 @@ dynamic:
 	# protoc --go_out=plugins=:. *.proto
 	# -race
 	PKG_CONFIG_PATH=/opt/toxcore-static2/lib64/pkgconfig CGO_LDFLAGS="-lopus -lsodium" \
-		go build -v -i -gcflags '-N -l' -ldflags "${GOVVV}" -pkgdir=/home/me/oss/pkg/linux_amd64_clang  .
+		/opt/go/bin/go build -v -i -gcflags '-N -l' -ldflags "${GOVVV}" -pkgdir=/home/me/oss/pkg/linux_amd64_clang  .
 	mv toxtun-go toxtun
 
 # 静态编译libtoxcore与其依赖库

@@ -16,12 +16,12 @@ import (
 
 var cn_servers = []interface{}{
 	"119.23.239.31", uint16(33445), "7F613A23C9EA5AC200264EB727429F39931A86C39B67FC14D9ECA4EBE0D37F25", // CN HangZhou1
+	"116.196.77.132", uint16(33445), "040326E850DDCB49B1B2D9E3E2789D425774E4C5D783A55C09A024D05D2A8A66", // CN Beijing
 	// tox.yikifish.com
 	// "tox.yikifish.com", uint16(33445), "8EF12E275BA9CD7D56625D4950F2058B06D5905D0650A1FE76AF18DB986DF760",
 	// "47.91.166.18", uint16(33556), "BEB842FDF490F9EF9F7453E8DABDFF3929AB33F4490287182E8DA6EDAC3CFA18", // CN HK xx
 	// "free.idcfengye.com", uint16(17501), "2F0683A8AA6F29B2E043E5423073C7F89F662D3777FE85615963E97EF8AF2803",
 	// "39.108.221.234", uint16(33445), "0E81B1927B25EB7A4857C36FE5D6B938841676ECFEA5557D1CFB7DF4A946967F", // CN HangZhou2
-	// "cotox.tk", uint16(33445), "AF66C5FFAA6CA67FB8E287A5B1D8581C15B446E12BF330963EF29E3AFB692918",
 	// "10.0.0.7", uint16(33345), "2F0683A8AA6F29B2E043E5423073C7F89F662D3777FE85615963E97EF8AF2803",
 }
 var ru_servers = []interface{}{
@@ -249,12 +249,6 @@ var useFixedBSs = false
 
 func addFixedBootstraps(t *tox.Tox) {
 	if useFixedBSs {
-		{
-			node := []interface{}{"cotox.tk", uint16(33445), "AF66C5FFAA6CA67FB8E287A5B1D8581C15B446E12BF330963EF29E3AFB692918"}
-			_, err := t.Bootstrap(node[0].(string), node[1].(uint16), node[2].(string))
-			_, err = t.AddTcpRelay(node[0].(string), node[1].(uint16), node[2].(string))
-			log.Println("hehehe", err == nil)
-		}
 		if false {
 			node := []interface{}{"133.130.127.155", uint16(33445), "5EE85FD7B4B6BD8FD113A1E8CC5853A233008B574E07F2CC76A7EA43AE24AE07"}
 			_, err := t.Bootstrap(node[0].(string), node[1].(uint16), node[2].(string))
