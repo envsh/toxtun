@@ -214,7 +214,10 @@ func (this *RudpSession) Write(buf []byte) (int, error) {
 }
 
 func (this *RudpSession) Close() error {
-	return this.sess.Close()
+	err := this.sess.Close()
+	err1 := this.rudp_.Close()
+	gopp.ErrPrint(err1)
+	return err
 }
 func (this *RudpSession) Closed() bool {
 	return this.sess.IsClosed()
@@ -366,7 +369,7 @@ func (this *RudpMux) dispatchProc() {
 			if sessx, ok := this.sesses.Load(conv); ok {
 				sess := sessx.(*RudpSession)
 				err := sess.Close()
-				gopp.ErrPrint(err, conv)
+				gopp.ErrPrint(err, sess.SessID(), conv)
 			} else {
 				log.Println("rudp mux conn rst not found", conv)
 			}
