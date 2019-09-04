@@ -213,7 +213,7 @@ func (this *PeerConn) servecli() {
 func (this *PeerConn) muxConnHandler(evtname string, evt NewConnEvent) {
 	switch evtname {
 	case "newconn":
-		muxsess := this.muxsess
+		muxsess := this.muxsess // for rudp3, only one muxsess, 所以直接跳到else
 		if muxsess == nil || (muxsess != nil && muxsess.IsClosed()) {
 			log.Panicln("not possible")
 			this.muxsess = nil
