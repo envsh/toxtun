@@ -6,17 +6,19 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"sort"
 	"strings"
 	"time"
 
 	tox "github.com/TokTok/go-toxcore-c"
-	"github.com/bitly/go-simplejson"
+	"github.com/envsh/go-toxcore/xtox"
 )
 
 var cn_servers = []interface{}{
+	"116.196.105.228", uint16(33445), "F5273784AAD79F46BE7CEAE7E7E92EDCF799963DE3F4E244A19E139A1CBF911D",
 	"119.23.239.31", uint16(33445), "7F613A23C9EA5AC200264EB727429F39931A86C39B67FC14D9ECA4EBE0D37F25", // CN HangZhou1
+	"120.79.155.35", uint16(33445), "1A00BCD1F0E0E5BC08B0F4B4934B08BCB02028D6D2F127C3441E06FE659A993F",
 	"116.196.77.132", uint16(33445), "040326E850DDCB49B1B2D9E3E2789D425774E4C5D783A55C09A024D05D2A8A66", // CN Beijing
+	"103.74.192.222", uint16(33445), "8A7F2FB2A5C83BCFD677DC0513F8EA8E41D14A9EFFB86BFAD3C2E51E1BCB0F04", // CN HK
 	// tox.yikifish.com
 	// "tox.yikifish.com", uint16(33445), "8EF12E275BA9CD7D56625D4950F2058B06D5905D0650A1FE76AF18DB986DF760",
 	// "47.91.166.18", uint16(33556), "BEB842FDF490F9EF9F7453E8DABDFF3929AB33F4490287182E8DA6EDAC3CFA18", // CN HK xx
@@ -65,6 +67,18 @@ func init() {
 		fmt.Sprintf("if tox disable udp, default: %v", tox_disable_udp))
 	flag.BoolVar(&useFixedBSs, "use-fixedbs", useFixedBSs, "use fixed bootstraps, possible faster.")
 	flag.StringVar(&tox_bs_group, "bs-group", tox_bs_group, "bootstrap group, us,ru,cn,auto")
+
+	add_our_nodes(cn_servers, "cn")
+	add_our_nodes(us_servers, "us")
+	add_our_nodes(ru_servers, "ru")
+}
+
+func add_our_nodes(nodes []interface{}, grp string) {
+	for i := 0; i < len(nodes)/3; i++ {
+		r := i * 3
+		ipstr, port, pubkey := nodes[r+0].(string), nodes[r+1].(uint16), nodes[r+2].(string)
+		xtox.AddNode(pubkey, ipstr, int(port), grp, int(port))
+	}
 }
 
 func is_selected_server(pubkey string) bool {
@@ -260,183 +274,14 @@ func addFixedBootstraps(t *tox.Tox) {
 
 // 切换到其他的bootstrap nodes上
 func switchServer(t *tox.Tox) {
-	newNodes := get3nodes()
-	for _, node := range newNodes {
-		if useFixedBSs {
-			// continue
-		}
-		r1, err := t.Bootstrap(node.ipaddr, node.port, node.pubkey)
-		if node.status_tcp {
-			r2, err := t.AddTcpRelay(node.ipaddr, node.port, node.pubkey)
-			info.Println("bootstrap(tcp):", r1, err, r2, node.ipaddr, node.last_ping, node.status_tcp)
-		} else {
-			info.Println("bootstrap(udp):", r1, err, node.ipaddr,
-				node.last_ping, node.status_tcp, node.last_ping_rt)
-		}
-	}
-	currNodes = newNodes
+	xtox.SwitchServer(t, "cn")
 
 	addFixedBootstraps(t)
 }
 
-func get3nodes() (nodes [3]ToxNode) {
-	idxes := make(map[int]bool, 0)
-	currips := make(map[string]bool, 0)
-	for idx := 0; idx < len(currNodes); idx++ {
-		currips[currNodes[idx].ipaddr] = true
-	}
-	for n := 0; n < len(allNodes)*3; n++ {
-		idx := rand.Int() % len(allNodes)
-		_, ok1 := idxes[idx]
-		_, ok2 := currips[allNodes[idx].ipaddr]
-		if !ok1 && !ok2 && allNodes[idx].status_tcp == true && allNodes[idx].last_ping_rt > 0 {
-			idxes[idx] = true
-			if len(idxes) == 3 {
-				break
-			}
-		}
-	}
-	if len(idxes) < 3 {
-		errl.Println("can not find 3 new nodes:", idxes)
-	}
-
-	_idx := 0
-	for k, _ := range idxes {
-		nodes[_idx] = allNodes[k]
-		_idx += 1
-	}
-	return
-}
-
 func init() {
 	rand.Seed(time.Now().UnixNano())
-	initThirdPartyNodes()
-	initToxNodes()
-	// go pingNodes()
 }
-
-// fixme: chown root.root toxtun-go && chmod u+s toxtun-go
-// should block
-func pingNodes() {
-	stop := false
-	for !stop {
-		btime := time.Now()
-		errcnt := 0
-		for idx, node := range allNodes {
-			if false {
-				log.Println(idx, node)
-			}
-			if true {
-				// rtt, err := Ping0(node.ipaddr, 3)
-				rtt, err := Ping0(node.ipaddr, 3)
-				if err != nil {
-					// log.Println("ping", ok, node.ipaddr, rtt.String())
-					log.Println("ping", err, node.ipaddr, rtt.String())
-					errcnt += 1
-				}
-				if err == nil {
-					allNodes[idx].last_ping_rt = uint(time.Now().Unix())
-					allNodes[idx].rtt = rtt
-				} else {
-					allNodes[idx].last_ping_rt = uint(0)
-					allNodes[idx].rtt = time.Duration(0)
-				}
-			}
-		}
-		etime := time.Now()
-		log.Printf("Pinged all=%d, errcnt=%d, %v\n", len(allNodes), errcnt, etime.Sub(btime))
-
-		// TODO longer ping interval
-		time.Sleep(30 * time.Second)
-	}
-}
-
-func initThirdPartyNodes() {
-	for idx := 0; idx < len(servers); idx += 3 {
-		node := ToxNode{
-			isthird:      true,
-			ipaddr:       servers[idx].(string),
-			port:         servers[idx+1].(uint16),
-			pubkey:       servers[idx+2].(string),
-			last_ping:    uint(time.Now().Unix()),
-			last_ping_rt: uint(time.Now().Unix()),
-			status_tcp:   true,
-		}
-
-		allNodes = append(allNodes, node)
-	}
-}
-
-func initToxNodes() {
-	bcc, err := Asset("toxnodes.json")
-	if err != nil {
-		log.Panicln(err)
-	}
-	jso, err := simplejson.NewJson(bcc)
-	if err != nil {
-		log.Panicln(err)
-	}
-
-	nodes := jso.Get("nodes").MustArray()
-	for idx := 0; idx < len(nodes); idx++ {
-		nodej := jso.Get("nodes").GetIndex(idx)
-		/*
-			log.Println(idx, nodej.Get("ipv4"), nodej.Get("port"), nodej.Get("last_ping"),
-				len(nodej.Get("tcp_ports").MustArray()))
-		*/
-		node := ToxNode{
-			ipaddr:       nodej.Get("ipv4").MustString(),
-			port:         uint16(nodej.Get("port").MustUint64()),
-			pubkey:       nodej.Get("public_key").MustString(),
-			last_ping:    uint(nodej.Get("last_ping").MustUint64()),
-			status_tcp:   nodej.Get("status_tcp").MustBool(),
-			last_ping_rt: uint(time.Now().Unix()),
-			weight:       calcNodeWeight(nodej),
-		}
-
-		allNodes = append(allNodes, node)
-		if idx < len(currNodes) {
-			currNodes[idx] = node
-		}
-	}
-
-	sort.Sort(ByRand(allNodes))
-	for idx, node := range allNodes {
-		if false {
-			log.Println(idx, node.ipaddr, node.port, node.last_ping)
-		}
-	}
-	info.Println("Load nodes:", len(allNodes))
-}
-
-func calcNodeWeight(nodej *simplejson.Json) int {
-	return 0
-}
-
-var allNodes = make([]ToxNode, 0)
-var currNodes [3]ToxNode
-
-type ToxNode struct {
-	isthird    bool
-	ipaddr     string
-	port       uint16
-	pubkey     string
-	weight     int
-	usetimes   int
-	legacy     int
-	chktimes   int
-	last_ping  uint
-	status_tcp bool
-	///
-	last_ping_rt uint // 程序内ping的时间
-	rtt          time.Duration
-}
-
-type ByRand []ToxNode
-
-func (this ByRand) Len() int           { return len(this) }
-func (this ByRand) Swap(i, j int)      { this[i], this[j] = this[j], this[i] }
-func (this ByRand) Less(i, j int) bool { return rand.Int()%2 == 0 }
 
 var livebots = []string{
 	"56A1ADE4B65B86BCD51CC73E2CD4E542179F47959FE3E0E21B4B0ACDADE51855D34D34D37CB5", // groupbot

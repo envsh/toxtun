@@ -48,12 +48,6 @@ func (this *Dispatcher) RegisterInputer(symbol interface{}, inputer Inputer) {
 
 func (this *Dispatcher) dispatch(friendNumber uint32, message string) {
 	if inputerx, ok := this.inputers.Load(friendNumber); ok {
-		fname, _ := this.tox.FriendGetName(friendNumber)
-		if fname == "prnuid.ef55c74a-08ae-4640-a950-10d6b24b94aa.3FEBE" {
-			return
-		}
-		log.Println("dispatch friend message", friendNumber, message)
-		log.Panicln("hhh", gopp.Retn(this.tox.FriendGetName(friendNumber)))
 		inputer := inputerx.(Inputer)
 		err := inputer.Input([]byte(message))
 		gopp.ErrPrint(err, friendNumber)

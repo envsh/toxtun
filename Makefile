@@ -15,7 +15,7 @@ dynamic:
 	# protoc --go_out=plugins=:. *.proto
 	# -race
 	PKG_CONFIG_PATH=/opt/toxcore-static2/lib64/pkgconfig CGO_LDFLAGS="-lopus -lsodium" \
-		/opt/go/bin/go build -v -i -gcflags '-N -l' -ldflags "${GOVVV}" -pkgdir=/home/me/oss/pkg/linux_amd64_clang  .
+		go build -v -i -gcflags '-N -l' -ldflags "${GOVVV}" -pkgdir=/home/me/oss/pkg/linux_amd64_clang  .
 	mv toxtun-go toxtun
 
 # 静态编译libtoxcore与其依赖库
